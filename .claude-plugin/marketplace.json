@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "abet-plugins",
+  "description": "Spec-driven delivery pipeline for the UPC-ABET accreditation platform",
+  "owner": {
+    "name": "UPC-ABET",
+    "url": "https://github.com/UPC-ABET"
+  },
+  "plugins": [
+    {
+      "name": "abet-common",
+      "source": "./plugins/abet-common",
+      "description": "Mandatory base for every ABET repo: the delivery pipeline skills, git-policy hooks, and the openspec/ + docs/ conventions.",
+      "category": "workflow",
+      "tags": ["openspec", "pipeline", "git-policy", "abet"]
+    },
+    {
+      "name": "abet-backend",
+      "source": "./plugins/abet-backend",
+      "description": "Backend profile for BACK-ACREDITACION-3.0: NestJS + TypeORM rules, migration skill, and the API performance optimizer.",
+      "category": "workflow",
+      "tags": ["nestjs", "typeorm", "backend", "abet"]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "abet-common",
+  "displayName": "ABET Common",
+  "version": "0.1.0",
+  "description": "Mandatory base for every ABET repo: the spec-driven delivery pipeline, the git-policy hooks, and the openspec/ + docs/ conventions.",
+  "author": {
+    "name": "UPC-ABET",
+    "url": "https://github.com/UPC-ABET"
+  },
+  "repository": "https://github.com/UPC-ABET/abet-claude-plugins",
+  "license": "UNLICENSED",
+  "keywords": ["abet", "openspec", "pipeline", "git-policy"]
+}

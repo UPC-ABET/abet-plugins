@@ -1,0 +1,28 @@
+{
+  "_comment": "Backend toolchain permissions for BACK-ACREDITACION-3.0. Merge on top of abet-common's snippet; the shared deny list still applies. Apply with: node install/apply-settings.mjs <repo-path> --profile backend",
+  "permissions": {
+    "allow": [
+      "Bash(pnpm test:*)",
+      "Bash(pnpm lint:*)",
+      "Bash(pnpm format:*)",
+      "Bash(pnpm check:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm exec tsc:*)",
+      "Bash(pnpm migration:create:*)",
+      "Bash(pnpm migration:generate:*)",
+      "Bash(pnpm migration:run:*)",
+      "Bash(pnpm migration:revert:*)",
+      "Bash(pnpm seed:*)",
+      "Bash(npx jest:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx eslint:*)",
+      "Bash(nest build:*)",
+      "Bash(docker compose ps:*)",
+      "Bash(docker compose logs:*)"
+    ],
+    "deny": [
+      "Bash(pnpm seed:drop:*)",
+      "Bash(docker compose down -v:*)"
+    ]
+  }
+}

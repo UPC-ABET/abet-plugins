@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "abet-backend",
+  "displayName": "ABET Backend",
+  "version": "0.1.0",
+  "description": "Backend profile layered on abet-common: NestJS + TypeORM stack rules, the TypeORM migration skill, and the API performance optimizer.",
+  "author": {
+    "name": "UPC-ABET",
+    "url": "https://github.com/UPC-ABET"
+  },
+  "repository": "https://github.com/UPC-ABET/abet-claude-plugins",
+  "license": "UNLICENSED",
+  "keywords": ["abet", "nestjs", "typeorm", "backend"],
+  "dependencies": [{ "name": "abet-common" }]
+}
