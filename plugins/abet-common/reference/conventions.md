@@ -81,8 +81,8 @@ appending `✅ DONE (YYYY-MM-DD)` to the heading, never one without the other.
 
 ## Cross-repo changes
 
-`BACK-ACREDITACION-3.0` and `FRONT-ACREDITACION-3.0` are **separate repositories**.
-A change touching both is genuinely cross-repo:
+The backend and frontend live in **separate repositories**, so a change touching both is
+genuinely cross-repo:
 
 ```
 openspec/changes/<slug>/

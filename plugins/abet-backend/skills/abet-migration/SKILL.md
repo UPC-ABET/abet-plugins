@@ -1,6 +1,6 @@
 ---
 name: abet-migration
-description: Create, review and run a TypeORM migration safely against a production database. Enforces CLI-generated timestamps, forward-only changes, a working down(), and explicit constraint naming. Use whenever a change touches the schema in BACK-ACREDITACION-3.0.
+description: Create, review and run a TypeORM migration safely against a production database. Enforces CLI-generated timestamps, forward-only changes, a working down(), and explicit constraint naming. Use whenever a change touches the database schema in the backend repository.
 ---
 
 # Write a migration

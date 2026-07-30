@@ -3,9 +3,9 @@
  *
  * Everything here resolves a package's JS entry point and runs it with `node`
  * rather than shelling out to `pnpm exec` or `node_modules/.bin/*`. Two reasons:
- * the .bin shims are `.CMD` files on Windows and need a shell, and the ABET repos
- * live under a path containing a space ("ABET 3.0"), which makes shell quoting a
- * live source of bugs. `execFileSync('node', [absPath, ...])` sidesteps both.
+ * the .bin shims are `.CMD` files on Windows and need a shell, and a checkout path
+ * containing a space breaks naive shell quoting. Spawning node with an argument
+ * array sidesteps both, on every platform.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';

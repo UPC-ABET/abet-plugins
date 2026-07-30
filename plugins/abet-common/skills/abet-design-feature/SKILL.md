@@ -33,7 +33,7 @@ person — and `/abet-implement` — starts where you started.
 
 ### 2. Decide single-repo or cross-repo
 
-`BACK-ACREDITACION-3.0` and `FRONT-ACREDITACION-3.0` are separate repositories.
+The backend and frontend live in separate repositories.
 
 **Single-repo** — one `tasks.md`, no contract file. Each task is a vertical slice:
 schema + endpoint + tests + docs together, never a horizontal "all the entities" layer.

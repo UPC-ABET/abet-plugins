@@ -17,9 +17,16 @@
     {
       "name": "abet-backend",
       "source": "./plugins/abet-backend",
-      "description": "Backend profile for BACK-ACREDITACION-3.0: NestJS + TypeORM rules, migration skill, and the API performance optimizer.",
+      "description": "Backend profile: NestJS + TypeORM stack rules, the migration skill, and the API performance optimizer.",
       "category": "workflow",
       "tags": ["nestjs", "typeorm", "backend", "abet"]
+    },
+    {
+      "name": "abet-frontend",
+      "source": "./plugins/abet-frontend",
+      "description": "Frontend profile: Next.js App Router + TanStack Query stack rules, the module skill, and the UI performance optimizer.",
+      "category": "workflow",
+      "tags": ["nextjs", "react", "frontend", "abet"]
     }
   ]
 }

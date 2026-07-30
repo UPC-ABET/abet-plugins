@@ -1,7 +1,7 @@
 # Backend stack rules
 
-Loaded by `/abet-implement`, `/abet-audit-pr` and `/abet-fix` when working in
-`BACK-ACREDITACION-3.0`.
+Loaded by `/abet-implement`, `/abet-audit-pr` and `/abet-fix` when working in the backend
+repository.
 
 This file holds **stack mechanics** — how to run things, and the failure modes specific
 to NestJS + TypeORM here. The *conventions* (naming, module layout, i18n keys, validation
