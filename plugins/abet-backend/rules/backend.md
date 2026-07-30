@@ -22,6 +22,7 @@ JWT (passport-jwt) + Microsoft Entra ID (MSAL) · Zod-validated env.
 | Lint | `pnpm lint` / `pnpm lint:fix` |
 | Format | `pnpm format` |
 | Everything | `pnpm check` |
+| Export API spec | `pnpm openapi:export` |
 | Create migration | `pnpm migration:create src/database/migrations/<kebab-name>` |
 | Run migrations | `pnpm migration:run` |
 | Revert one | `pnpm migration:revert` |
@@ -100,6 +101,26 @@ file the audit will always look for.
 - `find()` with no `take`/`skip` on anything that grows with enrolment is unbounded.
 - Excel (`exceljs`) and archive (`archiver`) generation must stream. Materialising a
   full report in memory is how this service gets OOM-killed on a real academic period.
+
+### The API spec is a committed artifact
+`openapi.json` is generated from the Swagger decorators by `pnpm openapi:export` and is
+**committed**. This repo is the frontend's source of truth for the API.
+
+Regenerate and commit it **in the same PR** as any change to a route, a DTO, or a response
+shape. A spec that lags the endpoints is worse than no spec, because the frontend trusts
+it and has no way to detect the lag.
+
+Two consequences worth internalising:
+
+- The spec diff *is* the contract review. A renamed or retyped field shows up as a line in
+  the PR even though nothing in this repo fails to compile — that is the point, and it is
+  the only place a breaking change becomes visible before it reaches the frontend.
+- Swagger decorators are therefore load-bearing, not documentation. An endpoint with no
+  `@ApiResponse` type, or a DTO whose decorators disagree with its TypeScript type,
+  produces a spec that lies. Treat that as a defect.
+
+Scope headers must appear in the spec too — apply the Swagger header decorator alongside
+the value decorator, or the frontend cannot see that the endpoint requires them.
 
 ### Env
 Every variable is declared in `src/commons/configs/env.config.ts` with Zod. Required vars

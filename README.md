@@ -88,6 +88,30 @@ tasks whether or not any work was done, so the gate silently passes and can neve
 its blocker. `/abet-implement` refuses to start against a checkbox-less task file for the
 same reason.
 
+### Cross-repo: contract at design time, generated spec as the enforcement
+
+Backend and frontend are separate repos. A change spanning both uses the **same slug in
+both**, with `proposal.md` and `contract.md` as identical copies and `design.md` /
+`tasks.md` holding only that repo's own side.
+
+Two modes, decided per change at design time:
+
+- **Sequential** (one person, backend then frontend) — no contract file. The backend's
+  committed `openapi.json` *is* the contract. This is the default.
+- **Parallel** (two people, or the frontend can't wait) — `contract.md` agreed before
+  either side writes code.
+
+The backend commits `openapi.json`, generated from its Swagger decorators by
+`pnpm openapi:export`, in the same PR as the endpoints it describes. That turns the
+contract from a promise into a diffable artifact: a renamed field shows up as a line in
+the PR instead of as a runtime error in the frontend three days later. Where `contract.md`
+and the generated spec disagree, **the spec wins** — the same rule as "the diff wins" for
+docs.
+
+**One ordering rule**: the backend PR merges and reaches `staging` before the frontend PR
+merges. The frontend may be developed in parallel, but it verifies against real responses,
+not assumptions. Archiving follows the same order, one chore PR per repo.
+
 ### Hooks are Node, not shell
 
 The four PreToolUse hooks are `.mjs`, invoked as
@@ -159,7 +183,7 @@ plugins/
 │   ├── reference/conventions.md
 │   ├── skills/abet-{define-task,design-feature,implement,fix,audit-pr,
 │   │                create-pr,address-review,archive,adr}/SKILL.md
-│   └── templates/{proposal,design,tasks,runbook,adr}.md
+│   └── templates/{proposal,design,tasks,runbook,contract,adr}.md
 ├── abet-backend/
 │   ├── .claude-plugin/plugin.json
 │   ├── agents/api-performance-optimizer.md

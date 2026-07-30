@@ -13,8 +13,10 @@ stays honest.
 
 1. Resolve `<slug>` from the branch (see `reference/conventions.md`).
 2. `openspec/changes/<slug>/` exists and contains at least one `tasks*.md`.
-3. Read every `tasks*.md` — cross-repo changes have `tasks-back.md` / `tasks-front.md`
-   behind a `tasks.md` index.
+3. Read `tasks.md`. On a cross-repo change it holds **only this repo's own tasks** — the
+   other side's live in that repo's copy of the change folder. Read `proposal.md` for the
+   shared story, and `contract.md` (or the backend's committed `openapi.json`) for the
+   API surface you are coding against.
 4. Count open tasks: `grep -c '^- \[ \]' openspec/changes/<slug>/tasks*.md`.
    - **Zero open, zero done** → the file was written with headings but no checkboxes.
      Stop and fix the task file first; you cannot track progress against it and neither
@@ -108,6 +110,10 @@ new architectural decision, stop. That is no longer implementation — return to
 The design's **Docs to update in this PR** list is a task, not a suggestion. Update
 `docs/CONTEXT.md` where the change alters the domain vocabulary, a business rule, an
 integration, or the architecture.
+
+**If the change touched an API surface**, regenerate the committed spec in the same batch
+that changed it — `pnpm openapi:export` on the backend. The spec is the frontend's source
+of truth; one that lags the endpoints is worse than none, because it is trusted.
 
 Three prohibitions:
 

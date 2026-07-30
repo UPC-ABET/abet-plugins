@@ -25,6 +25,15 @@ autonomous: the fully-rendered PR is shown first and created only after you say 
    `docs/POLICIES.md` pins an account for outward-facing GitHub actions, and the active
    account is not it, switch first: `gh auth switch --user <account>`. Getting this wrong
    attributes the PR to the wrong identity and is tedious to undo.
+7. **Cross-repo ordering** — if this is the **frontend** side of a cross-repo change:
+   the backend PR must be **merged and live on `staging`** before this PR merges.
+   Check it, and if the backend is not there yet, say so: open the PR if you like, but
+   flag in the body that it is blocked on the backend reaching staging. Merging frontend
+   code that calls endpoints which do not exist puts a broken state on `develop`.
+8. **The spec ships with the endpoints** — if this is the **backend** side and the change
+   altered any route, DTO or response shape, `openapi.json` must be regenerated
+   (`pnpm openapi:export`) and committed in this PR. A spec that lags the endpoints is
+   worse than no spec, because the frontend trusts it.
 
 ## Steps
 

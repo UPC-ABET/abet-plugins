@@ -38,15 +38,31 @@ The backend and frontend live in separate repositories.
 **Single-repo** — one `tasks.md`, no contract file. Each task is a vertical slice:
 schema + endpoint + tests + docs together, never a horizontal "all the entities" layer.
 
-**Cross-repo** — the change touches both. Then:
+**Cross-repo** — the change touches both. Use the **same slug in both repos**, and give
+each repo its own change folder:
 
-1. Write `contract.yml` **first**: the endpoints, request/response shapes, error codes
-   and status semantics both sides will code against. Neither side starts before it is
-   agreed.
-2. Split into `tasks-back.md` and `tasks-front.md`.
-3. Write a `tasks.md` **index** that points at both. `/abet-implement` globs `tasks*.md`;
-   without the index a cross-repo change looks empty to it.
-4. The whole change folder is copied identically into both repos.
+- `proposal.md` — **identical copy** in both. It is the shared ticket.
+- `contract.md` — **identical copy** in both, but only in parallel mode (below).
+- `design.md`, `tasks.md` — **that repo's side only**, so review rounds do not have to be
+  mirrored across two repositories.
+
+Then pick the mode. This is a real decision, not a formality:
+
+| | **Sequential** — prefer this | **Parallel** |
+| --- | --- | --- |
+| When | One person does the backend, merges it, then the frontend | Two people, or the frontend cannot wait for the backend to land |
+| `contract.md` | **Do not create it.** The backend's committed `openapi.json` is the contract | **Required**, agreed before either side writes code |
+
+Sequential is the lower-ceremony default and usually the right answer. Only write a
+`contract.md` when the frontend genuinely cannot wait — otherwise you have created a
+second source of truth that will drift from the implementation.
+
+For parallel mode, write `contract.md` from
+`plugins/abet-common/templates/contract.md` **before** either side's tasks: endpoints,
+request and response shapes, scope headers, error keys with statuses, pagination. Say
+explicitly what is *not* in the contract, so neither side builds against it speculatively.
+
+State in `design.md` which mode this change is in and why.
 
 ### 3. Walk the ADR gate — mandatory, and record it
 
@@ -84,6 +100,9 @@ From `plugins/abet-common/templates/design.md`. Sections:
 - **Approach** — organised per AC, not per layer. A reader should be able to trace
   AC-3 to the paragraph that explains how AC-3 is met.
 - **Backend** / **Frontend** — module, entity, migration, endpoint, guard, i18n keys.
+  Keep only this repo's own side; `design.md` is not mirrored across repositories.
+- **Cross-repo mode** — sequential or parallel and why, where the contract lives, and the
+  ordering rule. Delete the section for a single-repo change.
 - **Testing strategy** — which ACs get unit tests, which need integration, which are
   only verifiable by hand (those go in the runbook).
 - **Risks** — and the mitigation for each.

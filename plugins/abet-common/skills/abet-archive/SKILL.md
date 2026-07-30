@@ -21,6 +21,12 @@ like everything else — `develop` is protected and nothing is pushed to it dire
    unmerged change puts the spec in `specs/` while the code does not exist, which is
    exactly backwards.
 4. Tasks are complete: no `- [ ]` remaining in `tasks*.md`.
+5. **Cross-repo changes archive per repo, backend first.** If the same slug exists in the
+   other repository, **both** feature PRs must be merged before either side is archived.
+   Archiving the backend while the frontend PR is still open leaves the frontend's change
+   folder pointing at a spec that has moved to `specs/` in the other repo.
+   Each repo gets its own `chore/archive-<slug>` branch and its own chore PR — there is no
+   combined archive.
 
 ## Steps
 

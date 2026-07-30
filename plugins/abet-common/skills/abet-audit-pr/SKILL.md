@@ -66,6 +66,21 @@ Then **documentation currency**, which is this auditor's most valuable job:
   extension.
 - Was a decision made here that trips the ADR gate and has no ADR?
 
+**API contract currency**, when the diff touches routes, DTOs or response shapes:
+
+- **Backend**: was `openapi.json` regenerated and committed in this PR? A route, DTO or
+  response change with an unchanged spec is a **blocker** — the frontend reads that file
+  and will be wrong.
+- Read the `openapi.json` diff as a contract change, not as noise. A renamed or retyped
+  field is a breaking change even when nothing in this repo fails to compile. Say so, and
+  say whether the frontend consumes it.
+- If a `contract.md` exists, does the implemented spec still match it? **The spec wins** —
+  flag the contract for a dated correction rather than "fixing" the code to match a
+  design-time guess.
+- **Frontend**: do the hand-written types in `types/` still match the backend's committed
+  spec? A field the backend renamed will compile fine here and fail at runtime; that is
+  precisely the drift this check exists to catch.
+
 ### Auditor C — testing
 Do the new tests actually assert the acceptance criteria, or do they assert that the
 code does what it does? Was any test observed failing before the fix? Edge cases: empty

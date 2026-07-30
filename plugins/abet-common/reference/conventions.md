@@ -81,22 +81,61 @@ appending `✅ DONE (YYYY-MM-DD)` to the heading, never one without the other.
 
 ## Cross-repo changes
 
-The backend and frontend live in **separate repositories**, so a change touching both is
-genuinely cross-repo:
+The backend and frontend live in **separate repositories**. A change touching both gets
+the **same slug in both repos**, and each repo carries a change folder:
 
 ```
-openspec/changes/<slug>/
-├── proposal.md
-├── design.md
-├── contract.yml        the API contract, agreed before either side starts
-├── tasks.md            index pointing at the two below
-├── tasks-back.md
-└── tasks-front.md
+<backend>/openspec/changes/<slug>/     <frontend>/openspec/changes/<slug>/
+├── proposal.md   ← identical ─────────┤ proposal.md
+├── contract.md   ← identical ─────────┤ contract.md     (parallel mode only)
+├── design.md       backend's side     │ design.md         frontend's side
+└── tasks.md        backend's tasks    └ tasks.md          frontend's tasks
 ```
 
-The change folder lives in **both** repos, identical, and each side works its own
-`tasks-*.md`. `contract.yml` is written first and neither side deviates from it without
-updating it in both repos. A single-repo change uses one `tasks.md` and no contract.
+`proposal.md` and `contract.md` are **identical copies**: they are the shared agreement,
+settled once at design time and rarely edited. `design.md` and `tasks.md` hold only that
+repo's own side, so they can change through review rounds without having to be kept in
+sync across two repositories.
+
+Duplicating the proposal is deliberate. A developer working in one repo must be able to
+read the whole story without checking out the other one.
+
+### Two modes — decide per change, at design time
+
+| | **Sequential** | **Parallel** |
+| --- | --- | --- |
+| When | One person does the backend, merges it, then does the frontend | Two people, or the frontend must start before the backend lands |
+| `contract.md` | **Not created.** `openapi.json` is the contract | **Required**, agreed before either side writes code |
+| Frontend codes against | The real committed spec | `contract.md`, then reconciles against the spec |
+
+Sequential is the lower-ceremony default and is usually correct. Only write a
+`contract.md` when the frontend genuinely cannot wait for the backend — otherwise it is a
+second source of truth that will drift.
+
+### The generated spec is the source of truth
+
+The backend commits `openapi.json`, generated from its Swagger decorators
+(`pnpm openapi:export`). It ships **in the same PR** as the endpoints it describes.
+
+`contract.md` is a design-time *agreement*, not a record. Once the backend is
+implemented, **the generated spec wins** — the same rule as "the diff wins" for docs. If
+they disagree, correct `contract.md` with a dated append and say why.
+
+This is what makes the contract checkable rather than aspirational: a renamed field shows
+up as a line in the backend PR's diff, instead of surfacing as a runtime error in the
+frontend three days later.
+
+### Sequencing — the one ordering rule
+
+**The backend PR merges and reaches `staging` before the frontend PR merges.**
+
+The frontend may be *developed* in parallel, but it may not merge against endpoints that
+do not exist yet. Verifying the frontend against real responses on staging — rather than
+against what everyone assumed the response would be — is where contract mismatches
+actually get caught.
+
+Archiving follows the same order: two archive PRs, one per repo, and the frontend's only
+after both feature PRs have merged.
 
 ## Documentation
 

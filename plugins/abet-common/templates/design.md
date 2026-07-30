@@ -62,8 +62,17 @@ explains how AC-3 is met.
 - **Data**: query keys, cache invalidation, and every scope variable the key must include
 - **Types**: how they stay in sync with the backend contract
 
-<!-- Cross-repo changes: agree ./contract.yml before either side starts, and split the
-     work into tasks-back.md and tasks-front.md behind a tasks.md index. -->
+<!-- Keep only the section for this repo's own side. design.md is not mirrored across
+     repositories — proposal.md and contract.md are the shared copies. -->
+
+## Cross-repo mode
+
+Delete this section for a single-repo change.
+
+- **Mode**: sequential | parallel — and why.
+- **Contract**: `./contract.md` (parallel), or the backend's committed `openapi.json`
+  (sequential).
+- **Ordering**: the backend PR merges and reaches `staging` before the frontend PR merges.
 
 ## Testing strategy
 
