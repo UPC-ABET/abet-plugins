@@ -130,9 +130,10 @@ frontend three days later.
 The two repositories — and the two profile plugins — are **independent**. Neither reads
 the other from disk, and `abet-frontend` does not require `abet-backend` to be installed.
 
-The frontend confirms the backend has shipped by fetching its published spec over the
-network (`/abet-verify-contract`): `gh api` at an explicit ref for *merged*, and staging's
-`/docs-json` for *deployed*. A 404 is a clean "not shipped yet".
+The frontend confirms how far the backend has got by fetching its published spec with
+`gh api` at each branch in the promotion chain (`/abet-verify-contract`). A 404 is a clean
+"not there yet". No running environment is involved — it is a branch check, so it needs no
+deployed backend and no credentials beyond `gh`.
 
 Reading a colleague's working tree is not evidence. It may be on any branch, with
 uncommitted work, describing endpoints that exist nowhere — and the result cannot be
@@ -141,14 +142,21 @@ spec SHA in the PR body, so review can answer *which contract this was built aga
 
 ### Sequencing — the one ordering rule
 
-**The backend PR merges and reaches `staging` before the frontend PR merges.**
+**The backend change reaches the `staging` branch before the frontend PR merges.**
 
-`merged` and `deployed` are different states; only the second satisfies this rule.
+Promotion is `develop → staging → production`, fast-forward only, so the branch a change
+sits on says how far it has travelled. Requiring the backend to be on `staging` first
+guarantees it leads the frontend through the chain — frontend code can never reach
+production ahead of the API it calls.
 
-The frontend may be *developed* in parallel, but it may not merge against endpoints that
-do not exist yet. Verifying the frontend against real responses on staging — rather than
-against what everyone assumed the response would be — is where contract mismatches
-actually get caught.
+`merged` and `promoted` are different states, and only the second satisfies this rule.
+Note that `staging` is a **branch, not a running environment**: today only `production` is
+actually deployed. Being on `staging` proves the code is promoted and queued for release,
+not that anything responds. Runtime verification happens against a locally-run backend, or
+against production once released.
+
+The frontend may be *developed* in parallel throughout; it just may not merge ahead of the
+API it depends on.
 
 Archiving follows the same order: two archive PRs, one per repo, and the frontend's only
 after both feature PRs have merged.

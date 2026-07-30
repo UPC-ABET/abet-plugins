@@ -145,8 +145,13 @@ For a **parallel** cross-repo change, code against `openspec/changes/<slug>/cont
 until the backend lands, then run `/abet-verify-contract` and reconcile. Where they
 differ, **the spec wins** — the contract was a design-time agreement, not a record.
 
-Your PR may not merge until the backend's endpoints are live on `staging`. `merged` and
-`deployed` are different states, and only the second one satisfies the ordering rule.
+Your PR may not merge until the backend change has reached the **`staging` branch**.
+`merged` and `promoted` are different states, and only the second satisfies the ordering
+rule — it is what guarantees the backend leads you through `develop → staging →
+production`, so your code cannot reach users ahead of the API it calls.
+
+`staging` is a branch, not a running environment: today only `production` is deployed.
+For runtime checks, run the backend locally.
 
 ### Data fetching
 All of it goes through `useQuery` / `useMutation`. **Never `useEffect` + `useState` for

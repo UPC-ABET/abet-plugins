@@ -1,13 +1,14 @@
 ---
 name: abet-verify-contract
-description: Confirm the backend has actually shipped the API this change depends on, and that what shipped matches contract.md. Fetches the backend's published spec remotely — never from a local checkout. Use before merging any frontend change that calls a new or altered endpoint.
+description: Confirm the backend has promoted the API this change depends on, and that what shipped matches contract.md. Fetches the backend's published spec remotely with gh api — never from a local checkout, and with no running environment required. Use before merging any frontend change that calls a new or altered endpoint.
 ---
 
 # Verify the backend contract
 
 Answers two questions the frontend cannot answer for itself:
 
-1. **Did the backend actually ship it?** — merged, and deployed to staging.
+1. **How far has the backend got?** — merged to `develop`, promoted to `staging`, released
+   to `production`.
 2. **Does what shipped match what we agreed?** — `contract.md`, or the types in this repo.
 
 Everything here is **remote**. This skill never reads another repository from disk. A
@@ -17,57 +18,64 @@ this runs identically on any machine and in CI.
 
 ## Configuration
 
-Two values, declared once in this repo's `docs/CONTEXT.md` under external integrations
-(or as environment variables). Never a filesystem path.
+One value, declared once in this repo's `docs/CONTEXT.md` under external integrations, or
+as an environment variable. Never a filesystem path.
 
 | Value | Example | Env override |
 | ----- | ------- | ------------ |
 | Backend repository | `UPC-ABET/BACK-ACREDITACION-3.0` | `ABET_BACKEND_REPO` |
-| Staging API base URL | `https://<staging-host>` | `ABET_STAGING_API_URL` |
 
-If either is missing, say so and stop rather than guessing.
+If it is missing, say so and stop rather than guessing.
+
+There is no environment to call. The entire check is `gh api` against branches, so it
+needs no running backend, no staging host, and no credentials beyond `gh`.
 
 ## Steps
 
-### 1. Is it merged?
+### 1. Fetch the spec at each branch in the promotion chain
 
-The backend commits `openapi.json`, generated from its Swagger decorators. Fetch it at an
-explicit ref:
+The backend commits `openapi.json`, generated from its Swagger decorators. Promotion runs
+`develop → staging → production`, fast-forward only, so a branch tells you exactly how far
+the change has travelled:
 
 ```bash
-gh api "repos/$ABET_BACKEND_REPO/contents/openapi.json?ref=develop" \
-  -H "Accept: application/vnd.github.raw" > /tmp/spec-develop.json
+for ref in develop staging production; do
+  gh api "repos/$ABET_BACKEND_REPO/contents/openapi.json?ref=$ref" \
+    -H "Accept: application/vnd.github.raw" > "/tmp/spec-$ref.json" 2>/dev/null \
+    && echo "$ref: present" || echo "$ref: not there yet"
+done
 ```
 
 > **The ref is not optional.** This repository's GitHub default branch is `production`,
 > so a request without `?ref=` silently returns the *production* spec — older than what
 > you are building against, and wrong in a way that looks fine.
 
-A **404 means it is not merged yet.** That is a clean, unambiguous answer: report it and
-stop. Do not fall back to reading someone's working copy.
+A **404 is a clean answer**: the change has not reached that branch. Report it and stop.
+Do not fall back to reading someone's working copy.
 
-Record the blob SHA — it is what makes this check reproducible and reviewable:
-
-```bash
-gh api "repos/$ABET_BACKEND_REPO/contents/openapi.json?ref=develop" --jq '.sha'
-```
-
-### 2. Is it deployed?
-
-Merged is not deployed, and the ordering rule is about **deployed**. The backend exposes
-Swagger whenever `NODE_ENV` is not `production`, so staging serves the live document:
+Record the blob SHA of the ref you verified against — that is what makes this check
+reproducible and reviewable:
 
 ```bash
-curl -fsS "$ABET_STAGING_API_URL/docs-json" > /tmp/spec-staging.json
+gh api "repos/$ABET_BACKEND_REPO/contents/openapi.json?ref=staging" --jq '.sha'
 ```
 
-Compare the endpoints you care about across the two files. They can legitimately differ:
-`develop` is ahead of `staging` until a promotion runs. What matters is that the endpoints
-**this change calls** are present in the *staging* document — that is the gate for merging
-the frontend PR.
+### 2. Read what each branch means
 
-If staging is unreachable, say so plainly and report the merged-but-unverified state. Do
-not assume it is deployed.
+| Branch | Means |
+| ------ | ----- |
+| `develop` | Merged. The backend dev is done, nothing is released. |
+| `staging` | **Promoted — this is the gate for merging the frontend PR.** |
+| `production` | Released. Currently the only branch that is actually deployed. |
+
+The endpoints this change calls must be present in the **`staging`** spec before the
+frontend PR merges. That guarantees the backend leads the frontend through the promotion
+chain, so frontend code can never reach production ahead of the API it calls.
+
+Note what this check is *not*: `staging` is a branch, not a running environment. Being
+present there proves the code is promoted and queued for release — it does not prove
+anything responds. Runtime verification happens against a locally-run backend, or against
+production once released.
 
 ### 3. Does it match what we agreed?
 
@@ -89,13 +97,12 @@ relevant `types/index.ts` against the spec instead. Same checks, different refer
 ```
 ## Contract verification — <slug>
 
-Backend repo:  UPC-ABET/BACK-ACREDITACION-3.0
-Spec (develop): openapi.json @ 4b9c2f1
-Spec (staging): reachable, 538 paths
+Backend repo: UPC-ABET/BACK-ACREDITACION-3.0
+Verified against: openapi.json @ 4b9c2f1 (staging)
 
-| Endpoint                        | Merged | Staging | Matches contract |
-| ------------------------------- | ------ | ------- | ---------------- |
-| POST /rubrics/{id}/weights/bulk | ✅     | ✅      | ⚠️ see below     |
+| Endpoint                        | develop | staging | production | Matches contract |
+| ------------------------------- | ------- | ------- | ---------- | ---------------- |
+| POST /rubrics/{id}/weights/bulk | ✅      | ✅      | —          | ⚠️ see below     |
 
 ### Drift
 
@@ -106,12 +113,14 @@ Spec (staging): reachable, 538 paths
 
 Verdict, one of:
 
-- **✅ SHIPPED AND MATCHING** — safe to merge the frontend PR.
-- **⚠️ SHIPPED WITH DRIFT** — the endpoints exist but shapes differ. **The spec wins.**
-  Update the frontend types, and add a *dated correction* to `contract.md` in this repo
-  (and tell the backend dev to mirror it in theirs). Never rewrite the original agreement.
-- **⛔ NOT DEPLOYED** — merged but not on staging. The frontend PR must not merge yet.
-- **⛔ NOT MERGED** — the backend has not landed. Keep developing against `contract.md`.
+- **✅ PROMOTED AND MATCHING** — on `staging`, shapes agree. Safe to merge the frontend PR.
+- **⚠️ PROMOTED WITH DRIFT** — the endpoints are on `staging` but shapes differ. **The spec
+  wins.** Update the frontend types, and add a *dated correction* to `contract.md` in this
+  repo (and tell the backend dev to mirror it in theirs). Never rewrite the agreement.
+- **⛔ MERGED, NOT PROMOTED** — on `develop` only. The frontend PR must not merge yet; ask
+  for the backend to be promoted to `staging`.
+- **⛔ NOT MERGED** — the backend has not landed at all. Keep developing against
+  `contract.md`.
 
 ### 5. When drift is too large to absorb
 
@@ -125,7 +134,7 @@ a change stops matching its own acceptance criteria.
 Put the spec SHA in the PR body:
 
 ```
-Contract: openapi.json @ 4b9c2f1 (develop), verified on staging 2026-07-30
+Contract: openapi.json @ 4b9c2f1 (staging), verified 2026-07-30
 ```
 
 One line, and it makes "which contract version is this coded against?" answerable in

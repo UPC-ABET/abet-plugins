@@ -108,14 +108,20 @@ the PR instead of as a runtime error in the frontend three days later. Where `co
 and the generated spec disagree, **the spec wins** — the same rule as "the diff wins" for
 docs.
 
-**One ordering rule**: the backend PR merges and reaches `staging` before the frontend PR
-merges. Archiving follows the same order, one chore PR per repo.
+**One ordering rule**: the backend change reaches the `staging` **branch** before the
+frontend PR merges. Promotion is `develop → staging → production`, fast-forward only, so
+the branch says how far a change has travelled — and requiring the backend to lead means
+frontend code can never reach production ahead of the API it calls. Archiving follows the
+same order, one chore PR per repo.
+
+> `staging` is a branch, not a running environment — today only `production` is deployed.
+> Being on `staging` proves the code is promoted and queued, not that anything responds.
 
 **The repos verify each other remotely, never through the filesystem.** `abet-frontend`
 does not require `abet-backend`, and neither reads the other from disk.
-`/abet-verify-contract` fetches the published spec with `gh api` at an explicit ref
-(*merged?*) and from staging's `/docs-json` (*deployed?*), then diffs it against
-`contract.md`. A 404 is a clean "not shipped yet".
+`/abet-verify-contract` fetches the published spec with `gh api` at each branch in the
+chain, then diffs it against `contract.md`. A 404 is a clean "not there yet". No running
+environment, no URL to configure — one repo slug and `gh`.
 
 A colleague's working tree is not evidence — it may be on any branch, with uncommitted
 work, describing endpoints that exist nowhere, and the result can't be reproduced on
