@@ -119,27 +119,34 @@ Default `staleTime` is `0`, `refetchOnWindowFocus` off, `gcTime` 5 minutes. Use
 `staleTime: Infinity` only for static lookups (types, modalities, parameters, languages),
 and always pair it with explicit invalidation if the data can change at all.
 
-### Types come from the backend's committed spec
-The backend commits `openapi.json`, generated from its Swagger decorators. That file — not
-the Swagger UI, and not a guess — is the source of truth for every request and response
-shape this app sends or receives.
+### Types come from the backend's published spec — fetched remotely
+
+The backend commits `openapi.json`, generated from its Swagger decorators. That file is
+the source of truth for every request and response shape this app sends or receives.
+
+**Get it over the network, never from a local checkout.** Use `/abet-verify-contract`,
+which fetches it with `gh api` at an explicit ref and cross-checks staging.
+
+This repository does not know or care where anyone keeps the backend on disk. A
+teammate's working tree may sit on any branch, with uncommitted work, describing endpoints
+that exist nowhere yet — reading it proves nothing, and it makes the check impossible to
+reproduce on another machine or in CI. The two repos stay independent.
 
 Types here are **hand-written** in each module's `types/index.ts`, so nothing enforces the
 match. That makes it your job:
 
-- Before writing a type for a backend response, read the shape in the backend's
-  `openapi.json`. Transcribing from a screenshot or from memory is where drift starts.
+- Before writing a type for a backend response, read the shape from the fetched spec.
+  Transcribing from a screenshot or from memory is where drift starts.
 - A field the backend renamed will still **compile** here and fail at runtime. Typecheck
   passing proves nothing about contract correctness.
-- When a response shape looks wrong, check the spec before assuming the backend is broken —
-  and check the spec's commit date, because a stale spec is also possible.
+- Record the spec SHA you verified against in the PR body.
 
 For a **parallel** cross-repo change, code against `openspec/changes/<slug>/contract.md`
-until the backend lands, then reconcile against the real spec. Where they differ, **the
-spec wins** — the contract was a design-time agreement, not a record.
+until the backend lands, then run `/abet-verify-contract` and reconcile. Where they
+differ, **the spec wins** — the contract was a design-time agreement, not a record.
 
-Your PR may not merge until the backend's endpoints are live on `staging`. Verify against
-real responses there; that is where mismatches actually surface.
+Your PR may not merge until the backend's endpoints are live on `staging`. `merged` and
+`deployed` are different states, and only the second one satisfies the ordering rule.
 
 ### Data fetching
 All of it goes through `useQuery` / `useMutation`. **Never `useEffect` + `useState` for

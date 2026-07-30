@@ -125,9 +125,25 @@ This is what makes the contract checkable rather than aspirational: a renamed fi
 up as a line in the backend PR's diff, instead of surfacing as a runtime error in the
 frontend three days later.
 
+### The repos verify each other remotely, never through the filesystem
+
+The two repositories — and the two profile plugins — are **independent**. Neither reads
+the other from disk, and `abet-frontend` does not require `abet-backend` to be installed.
+
+The frontend confirms the backend has shipped by fetching its published spec over the
+network (`/abet-verify-contract`): `gh api` at an explicit ref for *merged*, and staging's
+`/docs-json` for *deployed*. A 404 is a clean "not shipped yet".
+
+Reading a colleague's working tree is not evidence. It may be on any branch, with
+uncommitted work, describing endpoints that exist nowhere — and the result cannot be
+reproduced on another machine or in CI. Whatever version was consulted is recorded as a
+spec SHA in the PR body, so review can answer *which contract this was built against*.
+
 ### Sequencing — the one ordering rule
 
 **The backend PR merges and reaches `staging` before the frontend PR merges.**
+
+`merged` and `deployed` are different states; only the second satisfies this rule.
 
 The frontend may be *developed* in parallel, but it may not merge against endpoints that
 do not exist yet. Verifying the frontend against real responses on staging — rather than

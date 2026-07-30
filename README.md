@@ -5,7 +5,7 @@ Claude Code plugins for the UPC-ABET accreditation platform. One marketplace, th
 | | `abet-common` | `abet-backend` | `abet-frontend` |
 | --- | --- | --- | --- |
 | **Role** | Mandatory base, every repo | Backend profile | Frontend profile |
-| **Skills** | 9 pipeline skills | `/abet-migration` | `/abet-module` |
+| **Skills** | 9 pipeline skills | `/abet-migration` | `/abet-module`, `/abet-verify-contract` |
 | **Agents** | `code-quality-reviewer` | `api-performance-optimizer` | `ui-performance-optimizer` |
 | **Hooks** | 4 git-policy hooks | — | — |
 | **Other** | DeepWiki MCP, doc templates | NestJS + TypeORM stack rules | Next.js + TanStack Query stack rules |
@@ -109,8 +109,21 @@ and the generated spec disagree, **the spec wins** — the same rule as "the dif
 docs.
 
 **One ordering rule**: the backend PR merges and reaches `staging` before the frontend PR
-merges. The frontend may be developed in parallel, but it verifies against real responses,
-not assumptions. Archiving follows the same order, one chore PR per repo.
+merges. Archiving follows the same order, one chore PR per repo.
+
+**The repos verify each other remotely, never through the filesystem.** `abet-frontend`
+does not require `abet-backend`, and neither reads the other from disk.
+`/abet-verify-contract` fetches the published spec with `gh api` at an explicit ref
+(*merged?*) and from staging's `/docs-json` (*deployed?*), then diffs it against
+`contract.md`. A 404 is a clean "not shipped yet".
+
+A colleague's working tree is not evidence — it may be on any branch, with uncommitted
+work, describing endpoints that exist nowhere, and the result can't be reproduced on
+another machine or in CI. The verified spec SHA goes in the PR body instead.
+
+> ⚠️ The `?ref=` is not optional. The backend repo's GitHub default branch is
+> `production`, so a request without it silently returns the production spec — older than
+> what you're building against, and wrong in a way that looks fine.
 
 ### Hooks are Node, not shell
 
@@ -193,7 +206,7 @@ plugins/
     ├── .claude-plugin/plugin.json
     ├── agents/ui-performance-optimizer.md
     ├── rules/frontend.md
-    └── skills/abet-module/SKILL.md
+    └── skills/abet-{module,verify-contract}/SKILL.md
 ```
 
 ## Developing

@@ -77,9 +77,11 @@ Then **documentation currency**, which is this auditor's most valuable job:
 - If a `contract.md` exists, does the implemented spec still match it? **The spec wins** —
   flag the contract for a dated correction rather than "fixing" the code to match a
   design-time guess.
-- **Frontend**: do the hand-written types in `types/` still match the backend's committed
+- **Frontend**: do the hand-written types in `types/` still match the backend's published
   spec? A field the backend renamed will compile fine here and fail at runtime; that is
-  precisely the drift this check exists to catch.
+  precisely the drift this check exists to catch. Fetch the spec **remotely** — via
+  `/abet-verify-contract` — never from a local checkout of the other repository, which
+  may be on any branch and prove nothing.
 
 ### Auditor C — testing
 Do the new tests actually assert the acceptance criteria, or do they assert that the

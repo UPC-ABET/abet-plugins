@@ -27,9 +27,11 @@ autonomous: the fully-rendered PR is shown first and created only after you say 
    attributes the PR to the wrong identity and is tedious to undo.
 7. **Cross-repo ordering** — if this is the **frontend** side of a cross-repo change:
    the backend PR must be **merged and live on `staging`** before this PR merges.
-   Check it, and if the backend is not there yet, say so: open the PR if you like, but
+   Verify it remotely with `/abet-verify-contract`; never by looking for the backend on
+   the local filesystem. If it is not deployed yet, say so: open the PR if you like, but
    flag in the body that it is blocked on the backend reaching staging. Merging frontend
    code that calls endpoints which do not exist puts a broken state on `develop`.
+   Put the verified spec SHA in the PR body.
 8. **The spec ships with the endpoints** — if this is the **backend** side and the change
    altered any route, DTO or response shape, `openapi.json` must be regenerated
    (`pnpm openapi:export`) and committed in this PR. A spec that lags the endpoints is
