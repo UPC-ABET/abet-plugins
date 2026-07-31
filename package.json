@@ -1,0 +1,35 @@
+{
+  "name": "abet-plugins",
+  "version": "0.2.0",
+  "description": "ABET delivery pipeline for Claude Code, Codex and opencode, plus the shared git-policy checks",
+  "license": "UNLICENSED",
+  "private": false,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "abet-hook": "./shared/hooks/cli.mjs"
+  },
+  "exports": {
+    "./checks/commit-message": "./shared/hooks/checks/commit-message.mjs",
+    "./checks/pre-commit": "./shared/hooks/checks/pre-commit.mjs",
+    "./cli": "./shared/hooks/cli.mjs"
+  },
+  "files": [
+    "shared/hooks",
+    "shared/reference",
+    "shared/rules",
+    "shared/templates",
+    "README.md"
+  ],
+  "scripts": {
+    "generate": "node build/generate.mjs",
+    "check": "node build/generate.mjs --check && node shared/hooks/test/hooks.test.mjs",
+    "test": "node shared/hooks/test/hooks.test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/UPC-ABET/abet-plugins.git"
+  }
+}

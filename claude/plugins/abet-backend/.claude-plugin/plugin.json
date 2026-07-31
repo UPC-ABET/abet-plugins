@@ -8,7 +8,7 @@
     "name": "UPC-ABET",
     "url": "https://github.com/UPC-ABET"
   },
-  "repository": "https://github.com/UPC-ABET/abet-claude-plugins",
+  "repository": "https://github.com/UPC-ABET/abet-plugins",
   "license": "UNLICENSED",
   "keywords": ["abet", "nestjs", "typeorm", "backend"],
   "dependencies": [{ "name": "abet-common" }]
