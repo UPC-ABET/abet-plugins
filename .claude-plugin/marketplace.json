@@ -9,21 +9,21 @@
   "plugins": [
     {
       "name": "abet-common",
-      "source": "./plugins/abet-common",
+      "source": "./claude/plugins/abet-common",
       "description": "Mandatory base for every ABET repo: the delivery pipeline skills, git-policy hooks, and the openspec/ + docs/ conventions.",
       "category": "workflow",
       "tags": ["openspec", "pipeline", "git-policy", "abet"]
     },
     {
       "name": "abet-backend",
-      "source": "./plugins/abet-backend",
+      "source": "./claude/plugins/abet-backend",
       "description": "Backend profile: NestJS + TypeORM stack rules, the migration skill, and the API performance optimizer.",
       "category": "workflow",
       "tags": ["nestjs", "typeorm", "backend", "abet"]
     },
     {
       "name": "abet-frontend",
-      "source": "./plugins/abet-frontend",
+      "source": "./claude/plugins/abet-frontend",
       "description": "Frontend profile: Next.js App Router + TanStack Query stack rules, the module skill, and the UI performance optimizer.",
       "category": "workflow",
       "tags": ["nextjs", "react", "frontend", "abet"]

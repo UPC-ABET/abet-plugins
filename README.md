@@ -34,8 +34,10 @@ Generated output **is committed**, so installing needs no build step.
 /plugin install abet-frontend@abet-plugins     # in the frontend repo
 ```
 
-The marketplace lives at `claude/.claude-plugin/marketplace.json`; point
-`/plugin marketplace add` at the `claude/` directory when installing from a local checkout.
+The marketplace manifest is at `.claude-plugin/marketplace.json` in the **repo root** —
+Claude Code looks for it there and nowhere else — and it points at the plugins under
+`claude/plugins/`. To install from a local checkout, point `/plugin marketplace add` at the
+repo root.
 
 **Codex** — copy `codex/prompts/*.md` into `~/.codex/prompts/`. Codex reads `AGENTS.md`
 from the repository root for conventions.
@@ -190,6 +192,7 @@ and Windows, and node is already a dependency of every repo here.
 
 ```
 .
+├── .claude-plugin/marketplace.json     must live at the repo root
 ├── shared/
 │   ├── skills/{common,backend,frontend}/abet-*/SKILL.md
 │   ├── agents/{common,backend,frontend}/*.md
@@ -202,7 +205,7 @@ and Windows, and node is already a dependency of every repo here.
 │       ├── {push-guard,commit-msg-validator,…}.mjs      PreToolUse adapters
 │       ├── cli.mjs                                      git-hook entry point
 │       └── test/hooks.test.mjs
-├── claude/     .claude-plugin/marketplace.json · plugins/abet-{common,backend,frontend}/
+├── claude/     plugins/abet-{common,backend,frontend}/
 ├── codex/      prompts/ · reference/
 ├── opencode/   .opencode/{commands,agents}/ · reference/
 └── build/generate.mjs
