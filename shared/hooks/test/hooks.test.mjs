@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { gitInvocations, tokenize, splitSegments } from '../lib/shell.mjs';
 import { scanDiff } from '../lib/secrets.mjs';
 import { slugFromBranch } from '../lib/branches.mjs';
+import { isAuthored, isScannable as isScannablePath } from '../lib/paths.mjs';
 import { validateCommitMessage } from '../checks/commit-message.mjs';
 
 const HOOKS = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -189,6 +190,29 @@ check('.env.example ignored', scanDiff(diffOf('.env.example', 'DB_PASSWORD="supe
 check('lockfile ignored', scanDiff(diffOf('pnpm-lock.yaml', 'token = "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"')).length, 0);
 check('allow-secret marker respected', scanDiff(diffOf('src/a.spec.ts', 'const password = "Abet_Str0ng!2026"; // abet-allow-secret')).length, 0);
 check('removed lines ignored', scanDiff('+++ b/src/a.ts\n@@ -1 +0,0 @@\n-const password = "Abet_Str0ng!2026";\n').length, 0);
+
+// ---------------------------------------------------------- generated-path filter
+console.log('generated-path filter');
+
+// A lockfile is not Prettier-formatted and no repo `format` script targets it, so
+// format-checking one blocks every dependency change with unactionable advice.
+check('lockfile not authored', isAuthored('pnpm-lock.yaml'), false);
+check('npm lockfile not authored', isAuthored('package-lock.json'), false);
+check('yarn lockfile not authored', isAuthored('yarn.lock'), false);
+check('nested lockfile not authored', isAuthored('apps/api/pnpm-lock.yaml'), false);
+check('generated spec not authored', isAuthored('openapi.json'), false);
+check('dist output not authored', isAuthored('dist/main.js'), false);
+check('node_modules not authored', isAuthored('node_modules/x/index.js'), false);
+check('next build not authored', isAuthored('.next/static/chunk.js'), false);
+check('binary not authored', isAuthored('public/logo.png'), false);
+check('source IS authored', isAuthored('src/modules/x/x.service.ts'), true);
+check('package.json IS authored', isAuthored('package.json'), true);
+check('markdown IS authored', isAuthored('docs/POLICIES.md'), true);
+check('yaml config IS authored', isAuthored('.github/workflows/ci.yml'), true);
+
+check('.env.example not scannable', isScannablePath('.env.example'), false);
+check('lockfile not scannable', isScannablePath('pnpm-lock.yaml'), false);
+check('source IS scannable', isScannablePath('src/a.ts'), true);
 
 // ------------------------------------------------- shared commit-message policy
 console.log('commit-message policy (shared with husky)');

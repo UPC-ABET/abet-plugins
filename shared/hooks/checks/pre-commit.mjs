@@ -11,6 +11,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { BASE_BRANCH } from '../lib/branches.mjs';
+import { isAuthored } from '../lib/paths.mjs';
 import { resolveTool, readPackageJson, runNode, git, excerpt } from '../lib/toolchain.mjs';
 import { scanDiff } from '../lib/secrets.mjs';
 
@@ -50,10 +51,13 @@ export function runPreCommitChecks(root, env = process.env) {
     );
   }
 
-  const codeFiles = staged.filter((f) => CODE_EXT.test(f) && existsSync(join(root, f)));
+  // Generated files (lockfiles, build output, the exported OpenAPI spec) are excluded
+  // from both lint and format: nobody authored them, no repo `format` script targets
+  // them, and rewriting a lockfile to satisfy a formatter can break the package manager.
+  const codeFiles = staged.filter((f) => CODE_EXT.test(f) && isAuthored(f) && existsSync(join(root, f)));
 
   // --- 2. formatting --------------------------------------------------------
-  const formatFiles = staged.filter((f) => FORMAT_EXT.test(f) && existsSync(join(root, f)));
+  const formatFiles = staged.filter((f) => FORMAT_EXT.test(f) && isAuthored(f) && existsSync(join(root, f)));
   const prettier = resolveTool(root, 'prettier');
   if (env.ABET_SKIP_FORMAT !== '1' && prettier && formatFiles.length > 0) {
     const res = runNode(root, prettier, ['--check', '--log-level', 'warn', ...formatFiles], 120_000);

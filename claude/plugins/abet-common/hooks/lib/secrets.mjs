@@ -26,18 +26,10 @@ const RULES = [
 /** Values that look like secrets but are placeholders, not credentials. */
 const PLACEHOLDER = /\b(?:xxx+|yyy+|zzz+|changeme|your[-_]?\w*|example|placeholder|dummy|fake|sample|redacted|<[^>]+>|\$\{[^}]+\}|process\.env\.)/i;
 
-/** Files where matches are expected and meaningless. */
-const IGNORED_PATHS = [
-  /(^|\/)\.env\.example$/,
-  /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/,
-  /(^|\/)node_modules\//,
-  /(^|\/)dist\//,
-  /\.(png|jpe?g|gif|svg|ico|pdf|xlsx?|docx?|zip|bak|lock)$/i,
-];
+// Which paths to skip is shared with the format and lint checks — see lib/paths.mjs.
+import { isScannable } from './paths.mjs';
 
-export function isScannable(path) {
-  return !IGNORED_PATHS.some((re) => re.test(path));
-}
+export { isScannable };
 
 /**
  * Scan added lines from a unified diff.
