@@ -197,6 +197,7 @@ FEATURE
   /abet-create-pr      gh pr create → develop
       ↓
   /abet-address-review triage review comments → one new commit
+      ↓                ←→ /abet-review-pr  (the reviewer's side, on someone else's PR)
       ↓
   /abet-archive        git mv changes/ → specs/ via its own chore PR
 

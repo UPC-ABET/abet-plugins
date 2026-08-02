@@ -19,6 +19,7 @@ There is no plugin or hook mechanism, so:
 | `/abet-design-feature` | common | Turn an agreed proposal. |
 | `/abet-fix` | common | The bug lane — reproduce first, find the root cause systematically, write a regression test that fails before the fix, then apply the minimal fix. |
 | `/abet-implement` | common | Execute an openspec change's tasks. |
+| `/abet-review-pr` | common | Review someone else's pull request. |
 | `/code-quality-reviewer` | common | Looping quality enforcer for a working branch. |
 | `/abet-migration` | backend | Create, review and run a TypeORM migration safely against a production database. |
 | `/api-performance-optimizer` | backend | Measure-first endpoint optimizer for the NestJS + TypeORM backend. |
