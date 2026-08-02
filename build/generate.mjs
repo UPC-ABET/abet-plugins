@@ -26,6 +26,34 @@ const args = process.argv.slice(2);
 const checkOnly = args.includes('--check');
 const only = args.find((a) => !a.startsWith('--'));
 
+/**
+ * The single version for the whole marketplace, taken from package.json and stamped into
+ * every plugin manifest.
+ *
+ * Claude Code pins a plugin to its declared `version`, so users only receive an update
+ * when that string changes — three manifests that drift apart, or one left un-bumped, means
+ * a fix silently never reaches anybody. Deriving them from one number makes drift
+ * impossible and leaves exactly one field to bump when releasing.
+ */
+const VERSION = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
+
+function stampManifestVersions() {
+  for (const key of Object.keys(PROFILES)) {
+    const file = join(ROOT, 'claude', 'plugins', `abet-${key}`, '.claude-plugin', 'plugin.json');
+    if (!existsSync(file)) continue;
+    const manifest = JSON.parse(readFileSync(file, 'utf8'));
+    if (manifest.version === VERSION) continue;
+    // Keep `version` in its documented position rather than appended at the end.
+    const ordered = {};
+    for (const [k, v] of Object.entries(manifest)) {
+      ordered[k] = v;
+      if (k === 'displayName') ordered.version = VERSION;
+    }
+    if (!ordered.version) ordered.version = VERSION;
+    emit(file, `${JSON.stringify(ordered, null, 2)}\n`);
+  }
+}
+
 /** Which plugin owns which shared subtree. Ownership is structural, not configured. */
 const PROFILES = {
   common: { skills: 'common', agents: 'common', rules: null },
@@ -243,6 +271,8 @@ for (const [key, build] of Object.entries(BUILDERS)) {
   if (only && key !== only) continue;
   build();
 }
+
+if (!only || only === 'claude') stampManifestVersions();
 
 if (checkOnly) {
   if (stale.length === 0) {

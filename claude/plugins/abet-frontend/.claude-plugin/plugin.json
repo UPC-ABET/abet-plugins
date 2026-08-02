@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "abet-frontend",
   "displayName": "ABET Frontend",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Frontend profile layered on abet-common: Next.js App Router + TanStack Query stack rules, the module scaffolding skill, and the UI performance optimizer.",
   "author": {
     "name": "UPC-ABET",
@@ -10,6 +10,15 @@
   },
   "repository": "https://github.com/UPC-ABET/abet-plugins",
   "license": "UNLICENSED",
-  "keywords": ["abet", "nextjs", "react", "frontend"],
-  "dependencies": [{ "name": "abet-common" }]
+  "keywords": [
+    "abet",
+    "nextjs",
+    "react",
+    "frontend"
+  ],
+  "dependencies": [
+    {
+      "name": "abet-common"
+    }
+  ]
 }

@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { gitInvocations, tokenize, splitSegments } from '../lib/shell.mjs';
+import { gitInvocations, tokenize, splitSegments, gitCommandCwd } from '../lib/shell.mjs';
 import { scanDiff } from '../lib/secrets.mjs';
 import { slugFromBranch } from '../lib/branches.mjs';
 import { isAuthored, isScannable as isScannablePath } from '../lib/paths.mjs';
@@ -202,6 +202,28 @@ check('.env.example ignored', scanDiff(diffOf('.env.example', 'DB_PASSWORD="supe
 check('lockfile ignored', scanDiff(diffOf('pnpm-lock.yaml', 'token = "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"')).length, 0);
 check('allow-secret marker respected', scanDiff(diffOf('src/a.spec.ts', 'const password = "Abet_Str0ng!2026"; // abet-allow-secret')).length, 0);
 check('removed lines ignored', scanDiff('+++ b/src/a.ts\n@@ -1 +0,0 @@\n-const password = "Abet_Str0ng!2026";\n').length, 0);
+
+// ------------------------------------------------------------ command cwd resolution
+console.log('command cwd resolution');
+
+// A hook is handed the session cwd, not the one the command moves to. Without this,
+// `cd ../other && git commit` inspects the wrong repository's staged files.
+const cwdOf = (cmd) => gitCommandCwd(cmd, '/repo/backend');
+
+check('no cd keeps the base', cwdOf('git commit -m "feat: x"'), '/repo/backend');
+check('relative cd is applied', cwdOf('cd ../frontend && git commit -m "feat: x"'), '/repo/frontend');
+check('absolute cd is applied', cwdOf('cd /srv/other && git push origin develop'), '/srv/other');
+check('nested relative cd', cwdOf('cd sub/dir && git commit -m "feat: x"'), '/repo/backend/sub/dir');
+check('dot segment ignored', cwdOf('cd ./sub && git commit -m "feat: x"'), '/repo/backend/sub');
+check('subshell cd applied', cwdOf('(cd ../frontend && git push origin develop)'), '/repo/frontend');
+check('cd after git does not count', cwdOf('git commit -m "feat: x" && cd ../frontend'), '/repo/backend');
+check('quoted path with space', cwdOf('cd "../my repo" && git commit -m "feat: x"'), '/repo/my repo');
+// An unquoted backslash is a shell escape, not a separator — `cd ..\frontend` really does
+// mean `..frontend` in POSIX. A real Windows path therefore arrives quoted.
+check('quoted windows absolute path', cwdOf('cd "D:\\projects\\app" && git commit -m "feat: x"'), 'D:\\projects\\app');
+check('env prefix before cd', cwdOf('FOO=1 cd ../frontend && git commit -m "feat: x"'), '/repo/frontend');
+check('cd with no target ignored', cwdOf('cd && git commit -m "feat: x"'), '/repo/backend');
+check('non-git command does not stop the walk', cwdOf('ls && cd ../frontend && git commit -m "feat: x"'), '/repo/frontend');
 
 // ---------------------------------------------------------- generated-path filter
 console.log('generated-path filter');

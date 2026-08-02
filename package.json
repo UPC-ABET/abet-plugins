@@ -1,6 +1,6 @@
 {
   "name": "abet-plugins",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "ABET delivery pipeline for Claude Code, Codex and opencode, plus the shared git-policy checks",
   "license": "UNLICENSED",
   "private": false,
@@ -26,7 +26,8 @@
   "scripts": {
     "generate": "node build/generate.mjs",
     "check": "node build/generate.mjs --check && node shared/hooks/test/hooks.test.mjs",
-    "test": "node shared/hooks/test/hooks.test.mjs"
+    "test": "node shared/hooks/test/hooks.test.mjs",
+    "version": "node build/generate.mjs && git add claude"
   },
   "repository": {
     "type": "git",

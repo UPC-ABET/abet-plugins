@@ -139,6 +139,56 @@ export function flagEnabled(cmd, name) {
 }
 
 /**
+ * The directory a git command in `cmd` actually runs in.
+ *
+ * A hook is handed the session's working directory, not the one the command moves to, so
+ * `cd ../other-repo && git commit` would otherwise be judged against the wrong repository —
+ * inspecting one repo's staged files while a different repo is the one being committed.
+ * That fails in both directions: a false block, or worse, a silent pass.
+ *
+ * Walks the segments in order tracking `cd`, and returns the directory in effect when the
+ * first git invocation appears. Subshell scoping is deliberately ignored: `(cd x && git …)`
+ * resolves to `x`, which is the repository the command acts on and therefore the one to
+ * check.
+ */
+export function gitCommandCwd(cmd, baseCwd) {
+  if (typeof cmd !== 'string') return baseCwd;
+  let cwd = baseCwd;
+
+  for (const seg of splitSegments(cmd)) {
+    const t = tokenize(seg);
+    let i = 0;
+    while (i < t.length && (ENV_ASSIGNMENT.test(t[i]) || WRAPPERS.has(t[i]) || t[i] === 'export')) i++;
+    if (i >= t.length) continue;
+
+    if (t[i] === 'cd' && t[i + 1] !== undefined && !t[i + 1].startsWith('-')) {
+      const target = t[i + 1];
+      cwd = isAbsolutePath(target) ? target : joinPath(cwd, target);
+      continue;
+    }
+
+    const base = t[i].replace(/\\/g, '/').split('/').pop().replace(/\.exe$/i, '');
+    if (base === 'git') return cwd;
+  }
+  return cwd;
+}
+
+const isAbsolutePath = (p) => /^([A-Za-z]:[\\/]|[\\/]|~)/.test(p);
+
+/** Minimal POSIX-style join that also copes with Windows separators and `..`. */
+function joinPath(base, rel) {
+  const parts = `${String(base).replace(/\\/g, '/')}/${rel.replace(/\\/g, '/')}`.split('/');
+  const out = [];
+  for (const part of parts) {
+    if (part === '' && out.length > 0) continue;
+    if (part === '.') continue;
+    if (part === '..') { if (out.length > 1) out.pop(); continue; }
+    out.push(part);
+  }
+  return out.join('/') || '/';
+}
+
+/**
  * Find every git invocation in a command string.
  * Returns `{ subcommand, args }` per invocation, with git's own global flags stripped.
  */

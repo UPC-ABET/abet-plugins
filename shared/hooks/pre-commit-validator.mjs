@@ -10,7 +10,7 @@
  * ABET_SKIP_TYPECHECK, ABET_SKIP_TESTS, ABET_FULL_TESTS (all `=1`).
  */
 import { readInput, deny, warn, allow, run, bashCommand } from './lib/hook.mjs';
-import { gitInvocations } from './lib/shell.mjs';
+import { gitInvocations, gitCommandCwd } from './lib/shell.mjs';
 import { repoRoot } from './lib/toolchain.mjs';
 import { runPreCommitChecks } from './checks/pre-commit.mjs';
 
@@ -22,7 +22,9 @@ run(async () => {
   const isCommit = gitInvocations(cmd).some((inv) => inv.subcommand === 'commit');
   if (!isCommit) allow();
 
-  const root = repoRoot(input.cwd || process.cwd());
+  // Resolve the directory the command actually runs in, not the session's — otherwise a
+  // `cd ../other-repo && git commit` is checked against the wrong repository.
+  const root = repoRoot(gitCommandCwd(cmd, input.cwd || process.cwd()));
   const result = runPreCommitChecks(root);
 
   if (!result.ok) deny(`pre-commit-validator: ${result.message}`);

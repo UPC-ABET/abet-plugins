@@ -12,7 +12,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { readInput, deny, allow, run, bashCommand } from './lib/hook.mjs';
-import { gitInvocations, positionals, hasShortFlag, flagEnabled } from './lib/shell.mjs';
+import { gitInvocations, positionals, hasShortFlag, flagEnabled, gitCommandCwd } from './lib/shell.mjs';
 import { PROTECTED_BRANCHES, BASE_BRANCH } from './lib/branches.mjs';
 
 const PROTECTED = new Set(PROTECTED_BRANCHES);
@@ -42,7 +42,9 @@ run(async () => {
   const cmd = bashCommand(input);
   if (!cmd) allow();
 
-  const cwd = input.cwd || process.cwd();
+  // The branch fallback (a push with no refspec) must be read from the repository the
+  // command actually runs in, not the session's.
+  const cwd = gitCommandCwd(cmd, input.cwd || process.cwd());
   // Read the flag from the command text as well as the real environment. A PreToolUse hook
   // is a child of Claude Code, not of the command being inspected, so an inline
   // `ABET_ALLOW_PROTECTED_PUSH=1 git push ...` prefix never reaches process.env — and an
