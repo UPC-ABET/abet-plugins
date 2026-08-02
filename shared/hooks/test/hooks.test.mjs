@@ -106,9 +106,21 @@ check('absolute git path', push('/usr/bin/git push origin develop'), 'deny');
 check('quoted branch', push('git push origin "develop"'), 'deny');
 check('push-option does not eat branch', push('git push -o ci.skip origin develop'), 'deny');
 
-// escape hatch for the release promotion flow
+// escape hatch, via the real environment
 check('escape hatch allows develop', push('git push origin develop', { ABET_ALLOW_PROTECTED_PUSH: '1' }), 'allow');
 check('escape hatch still blocks force', push('git push --force origin develop', { ABET_ALLOW_PROTECTED_PUSH: '1' }), 'deny');
+
+// escape hatch, written inline in the command. A hook is a child of Claude Code, not of
+// the command, so process.env never sees this prefix — it has to be read as literal text.
+check('inline prefix allows develop', push('ABET_ALLOW_PROTECTED_PUSH=1 git push origin develop'), 'allow');
+check('inline prefix allows production', push('ABET_ALLOW_PROTECTED_PUSH=1 git push origin production'), 'allow');
+check('inline export form', push('export ABET_ALLOW_PROTECTED_PUSH=1 && git push origin staging'), 'allow');
+check('inline prefix inside bash -c', push('bash -c "ABET_ALLOW_PROTECTED_PUSH=1 git push origin develop"'), 'allow');
+check('inline prefix still blocks force', push('ABET_ALLOW_PROTECTED_PUSH=1 git push --force origin develop'), 'deny');
+check('inline prefix set to 0 does not unlock', push('ABET_ALLOW_PROTECTED_PUSH=0 git push origin develop'), 'deny');
+check('a different var does not unlock', push('SOMETHING_ELSE=1 git push origin develop'), 'deny');
+check('mentioning the var in a message does not unlock',
+  push('git commit -m "ABET_ALLOW_PROTECTED_PUSH=1" && git push origin develop'), 'deny');
 
 // non-push git and non-git commands
 check('git fetch untouched', push('git fetch origin'), 'allow');

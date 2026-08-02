@@ -94,10 +94,11 @@ async function prePush(root) {
     blockWith(
       'push-guard',
       `Direct push to the protected branch \`${target}\` is blocked.\n\n` +
-      `Push to a feature branch and open a pull request against \`${BASE_BRANCH}\`:\n` +
+      `Normally you want a pull request against \`${BASE_BRANCH}\`:\n` +
       '  git push -u origin <feat|fix>/<slug>\n\n' +
-      'For the release promotion flow (develop → staging → production), set\n' +
-      'ABET_ALLOW_PROTECTED_PUSH=1 in the environment.'
+      'If the direct push is deliberate — a release promotion, or a decision you have\n' +
+      'made explicitly — prefix the command to override:\n' +
+      `  ABET_ALLOW_PROTECTED_PUSH=1 git push origin ${target}`
     );
   }
 }

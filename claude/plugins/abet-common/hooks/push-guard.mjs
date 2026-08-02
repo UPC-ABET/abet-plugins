@@ -12,7 +12,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { readInput, deny, allow, run, bashCommand } from './lib/hook.mjs';
-import { gitInvocations, positionals, hasShortFlag } from './lib/shell.mjs';
+import { gitInvocations, positionals, hasShortFlag, flagEnabled } from './lib/shell.mjs';
 import { PROTECTED_BRANCHES, BASE_BRANCH } from './lib/branches.mjs';
 
 const PROTECTED = new Set(PROTECTED_BRANCHES);
@@ -43,7 +43,11 @@ run(async () => {
   if (!cmd) allow();
 
   const cwd = input.cwd || process.cwd();
-  const allowProtected = process.env.ABET_ALLOW_PROTECTED_PUSH === '1';
+  // Read the flag from the command text as well as the real environment. A PreToolUse hook
+  // is a child of Claude Code, not of the command being inspected, so an inline
+  // `ABET_ALLOW_PROTECTED_PUSH=1 git push ...` prefix never reaches process.env — and an
+  // inline prefix is exactly what the block message below tells people to use.
+  const allowProtected = flagEnabled(cmd, 'ABET_ALLOW_PROTECTED_PUSH');
 
   for (const inv of gitInvocations(cmd)) {
     if (inv.subcommand !== 'push') continue;
@@ -82,11 +86,12 @@ run(async () => {
         deny(`push-guard: refusing to delete the protected branch \`${target}\` on the remote.`);
       }
       deny(
-        `push-guard: direct push to the protected branch \`${target}\` is blocked.\n` +
-        `Push your work to a feature branch and open a pull request against \`${BASE_BRANCH}\`:\n` +
-        '  git push -u origin <feat|fix>/<slug>\n' +
-        'For the release promotion flow (develop -> staging -> production), re-run with ' +
-        'ABET_ALLOW_PROTECTED_PUSH=1 set in the environment.'
+        `push-guard: direct push to the protected branch \`${target}\` is blocked.\n\n` +
+        `Normally you want a pull request against \`${BASE_BRANCH}\`:\n` +
+        '  git push -u origin <feat|fix>/<slug>\n\n' +
+        'If the direct push is deliberate — a release promotion, or a decision you have\n' +
+        'made explicitly — prefix the command to override:\n' +
+        `  ABET_ALLOW_PROTECTED_PUSH=1 git push origin ${target}`
       );
     }
   }

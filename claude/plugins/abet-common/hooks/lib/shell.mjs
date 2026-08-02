@@ -93,6 +93,51 @@ const GIT_GLOBAL_FLAGS = new Set([
   '--no-optional-locks', '--no-lazy-fetch', '--no-advice',
 ]);
 
+const ENV_ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
+
+/**
+ * Collect environment assignments written into the command itself, whether as a prefix
+ * (`FOO=1 git push`) or a preceding `export FOO=1 && git push`.
+ *
+ * This exists because a PreToolUse hook runs as a child of Claude Code, not of the command
+ * it is inspecting — so `process.env` never sees a variable the user prefixed onto their
+ * command. Reading the assignment as literal text from the command string is the only way
+ * an inline override can work, and an inline override is what the block message tells
+ * people to use.
+ */
+export function envAssignments(cmd, depth = 0) {
+  if (depth > 4 || typeof cmd !== 'string') return {};
+  const env = {};
+
+  for (const seg of splitSegments(cmd)) {
+    const t = tokenize(seg);
+    let i = 0;
+
+    if (t[i] === 'export' || t[i] === 'set') i++;
+    while (i < t.length) {
+      const m = ENV_ASSIGNMENT.exec(t[i]);
+      if (!m) break;
+      env[m[1]] = m[2];
+      i++;
+    }
+
+    while (i < t.length && WRAPPERS.has(t[i])) i++;
+    if (i >= t.length) continue;
+
+    const base = t[i].replace(/\\/g, '/').split('/').pop().replace(/\.exe$/i, '');
+    if (SHELLS.has(base)) {
+      const ci = t.indexOf('-c', i);
+      if (ci !== -1 && t[ci + 1] !== undefined) Object.assign(env, envAssignments(t[ci + 1], depth + 1));
+    }
+  }
+  return env;
+}
+
+/** True when `name` is set to `1` either in the real environment or inline in the command. */
+export function flagEnabled(cmd, name) {
+  return process.env[name] === '1' || envAssignments(cmd)[name] === '1';
+}
+
 /**
  * Find every git invocation in a command string.
  * Returns `{ subcommand, args }` per invocation, with git's own global flags stripped.

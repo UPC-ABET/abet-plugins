@@ -184,6 +184,37 @@ PR merges — an ordering guarantee, not a liveness one, since only `production`
 `/abet-verify-contract` checks this remotely with `gh api` at each branch; it never reads
 another repo from disk.
 
+### What the hooks block, and the one escape hatch
+
+| Hook | Behaviour |
+| ---- | --------- |
+| `push-guard` | **Blocks** pushes to `develop`, `staging`, `production`, and unconditional force pushes. Parses subshells, `bash -c`, `-uf` clusters, `+refspec`, `git -C`/`-c` globals, chained commands. |
+| `commit-msg-validator` | **Blocks** non-Conventional-Commit subjects, multi-line messages, trailers, and `--no-verify`. |
+| `pre-commit-validator` | **Blocks** on staged secrets, unformatted files, lint problems, type errors, or failing related tests. Generated files (lockfiles, build output, `openapi.json`) are exempt from lint and format. |
+| `branch-name-validator` | **Warns only.** Never blocks. |
+
+`--force-with-lease` and `--force-if-includes` are **allowed**; bare `--force` and `-f` are
+not. The leased forms abort when the remote has moved, which is the correct way to push a
+rebased branch.
+
+To push a protected branch deliberately — a release promotion, or a decision you have made
+explicitly — prefix the command:
+
+```bash
+ABET_ALLOW_PROTECTED_PUSH=1 git push origin develop
+```
+
+It relaxes only the protected-branch rule; force pushes stay blocked regardless.
+
+The prefix is read from the **command string**, not only from `process.env`. A PreToolUse
+hook runs as a child of Claude Code rather than of the command it inspects, so an inline
+assignment never reaches its environment — an earlier version of this hook documented the
+override and then ignored it, which made the guard look absolute. The git-hook path
+receives the variable natively, so both entry points honour it.
+
+Precision matters: `=0` does not unlock, an unrelated variable does not unlock, and a commit
+message that merely contains the string does not unlock. All covered by the suite.
+
 ### Hooks are Node, not shell
 
 No Git Bash, no `jq`, no PowerShell variants to keep in sync — the same code runs on macOS
