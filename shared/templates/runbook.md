@@ -16,8 +16,8 @@ line someone will miss at 6pm on a Friday. Write "None" if there is none.
 
 ```bash
 # exact commands, in order
-pnpm migration:run
-pnpm seed:auth-roles-permissions
+pnpm --filter ./backend migration:run
+pnpm --filter ./backend seed:auth-roles-permissions
 ```
 
 ## Manual validation
@@ -54,7 +54,7 @@ The exact steps. If reverting the code is not sufficient — because a migration
 data was rewritten — say so explicitly and give the data-level procedure.
 
 ```bash
-pnpm migration:revert
+pnpm --filter ./backend migration:revert
 ```
 
 ## Do NOT

@@ -2,7 +2,7 @@
 
 **Slug**: `<slug>`
 **Branch**: `feat/<slug>`
-**Repos affected**: backend | frontend | both
+**Packages affected**: backend | frontend | both
 **Created**: YYYY-MM-DD
 
 ## Problem
