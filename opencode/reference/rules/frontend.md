@@ -1,30 +1,34 @@
 # Frontend stack rules
 
 Loaded by `/abet-implement`, `/abet-audit-pr` and `/abet-fix` when working in the
-frontend repository.
+`frontend/` package.
 
 This file holds **stack mechanics** — how to run things, and the failure modes specific
 to Next.js App Router + TanStack Query here. The *conventions* (naming, module layout,
-import direction, i18n) live in `docs/POLICIES.md` in the repo itself. Read both.
+import direction, i18n) live in `frontend/docs/POLICIES.md`. Read both, plus the
+repo-root `docs/POLICIES.md`.
 
 ## Stack
 
 Next.js 16 (App Router, Turbopack) · React 19 · TypeScript strict · TanStack Query for
 server state, React context for client state · Tailwind CSS v4 · custom `useI18n()` with
 `src/language/locales/{es,en}.json` · UI primitives in `src/shared/components/ui/`,
-some based on shadcn/ui · pnpm.
+some based on shadcn/ui · pnpm workspace.
 
 ## Commands
 
+Run from the repo root with the path-filter form; from inside `frontend/`, drop the
+`pnpm --filter ./frontend` prefix and run the plain script.
+
 | Purpose | Command |
 | ------- | ------- |
-| Typecheck | `npx tsc --noEmit` |
-| Lint | `pnpm lint` (runs with `--max-warnings 0`) |
-| Format | `pnpm format` |
-| Dev server | `pnpm dev` |
-| Build | `pnpm build` |
+| Typecheck | `pnpm --filter ./frontend exec tsc --noEmit` |
+| Lint | `pnpm --filter ./frontend lint` (runs with `--max-warnings 0`) |
+| Format | `pnpm --filter ./frontend format` |
+| Dev server | `pnpm --filter ./frontend dev` |
+| Build | `pnpm --filter ./frontend build` |
 
-**pnpm, never npm.**
+**pnpm, never npm.** The lockfile is the root `pnpm-lock.yaml`, shared by both packages.
 
 ### There is no test runner
 
@@ -32,8 +36,8 @@ No jest, no vitest, no playwright. This is a real gap, and it changes how the pi
 behaves here:
 
 - `/abet-implement`'s TDD loop has nothing to run. Substitute the tightest available
-  feedback: `npx tsc --noEmit`, then `pnpm lint`, then manual verification against the
-  steps in the change's `runbook.md`.
+  feedback: `pnpm --filter ./frontend exec tsc --noEmit`, then `pnpm --filter ./frontend
+  lint`, then manual verification against the steps in the change's `runbook.md`.
 - A task's completion criterion becomes "typecheck and lint clean **and** the runbook
   step verified", not "its test passes".
 - `/abet-audit-pr`'s testing auditor should report the absence of coverage as a finding
@@ -46,7 +50,7 @@ how.
 ## Where things go
 
 ```
-src/
+frontend/src/
 ├── app/          route shell only — imports a page component and renders it
 ├── configs/
 ├── language/     locales/{es,en}.json
@@ -119,39 +123,33 @@ Default `staleTime` is `0`, `refetchOnWindowFocus` off, `gcTime` 5 minutes. Use
 `staleTime: Infinity` only for static lookups (types, modalities, parameters, languages),
 and always pair it with explicit invalidation if the data can change at all.
 
-### Types come from the backend's published spec — fetched remotely
+### Types come from the backend's published spec — read on disk
 
-The backend commits `openapi.json`, generated from its Swagger decorators. That file is
-the source of truth for every request and response shape this app sends or receives.
-
-**Get it over the network, never from a local checkout.** Use `/abet-verify-contract`,
-which fetches it with `gh api` at an explicit ref and cross-checks staging.
-
-This repository does not know or care where anyone keeps the backend on disk. A
-teammate's working tree may sit on any branch, with uncommitted work, describing endpoints
-that exist nowhere yet — reading it proves nothing, and it makes the check impossible to
-reproduce on another machine or in CI. The two repos stay independent.
+`backend/openapi.json`, generated from its Swagger decorators, is the source of truth for
+every request and response shape this app sends or receives. Backend and frontend are
+packages in the same repository, so this is a **local, same-tree** check, not a network
+fetch: `/abet-verify-contract` reads `backend/openapi.json` at HEAD directly.
 
 Types here are **hand-written** in each module's `types/index.ts`, so nothing enforces the
 match. That makes it your job:
 
-- Before writing a type for a backend response, read the shape from the fetched spec.
-  Transcribing from a screenshot or from memory is where drift starts.
+- Before writing a type for a backend response, read the shape from `backend/openapi.json`
+  at HEAD. Transcribing from a screenshot or from memory is where drift starts.
 - A field the backend renamed will still **compile** here and fail at runtime. Typecheck
   passing proves nothing about contract correctness.
-- Record the spec SHA you verified against in the PR body.
+- Record the spec SHA (`git log -1 --format=%h -- backend/openapi.json`) in the PR body.
 
-For a **parallel** cross-repo change, code against `openspec/changes/<slug>/contract.md`
-until the backend lands, then run `/abet-verify-contract` and reconcile. Where they
-differ, **the spec wins** — the contract was a design-time agreement, not a record.
+For a **parallel** change (two people, or you start before the backend code exists), code
+against `openspec/changes/<slug>/contract.md` until the backend lands, then run
+`/abet-verify-contract` and reconcile. Where they differ, **the spec wins** — the contract
+was a design-time agreement, not a record.
 
-Your PR may not merge until the backend change has reached the **`staging` branch**.
-`merged` and `promoted` are different states, and only the second satisfies the ordering
-rule — it is what guarantees the backend leads you through `develop → staging →
-production`, so your code cannot reach users ahead of the API it calls.
-
-`staging` is a branch, not a running environment: today only `production` is deployed.
-For runtime checks, run the backend locally.
+There is no `staging`-branch gate on merging: the default is one PR carrying both
+packages, and even when split, the only ordering rule is that the backend PR merges into
+`develop` first. `staging` (https://accreditation-stg.tcupc.pe) is a real deployed
+environment where runtime verification happens before promoting to `production`
+(https://accreditation.tcupc.pe) — for that, run the backend locally or check staging once
+deployed.
 
 ### Data fetching
 All of it goes through `useQuery` / `useMutation`. **Never `useEffect` + `useState` for

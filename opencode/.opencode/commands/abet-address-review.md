@@ -35,9 +35,9 @@ The third bucket is the reason this skill exists.
 A comment belongs there when implementing it would: contradict an accepted ADR, change
 behaviour the proposal explicitly scoped in or out, alter an API contract the frontend
 already consumes, or reverse something a previous PR deliberately changed. Check
-`git log` and `docs/adr/` before assuming a reviewer's suggestion is simply an
-improvement — the "obvious" fix has sometimes already been tried and reverted for a
-reason that is not visible in the diff.
+`git log` and the relevant `docs/adr/`, `backend/docs/adr/` or `frontend/docs/adr/` before
+assuming a reviewer's suggestion is simply an improvement — the "obvious" fix has
+sometimes already been tried and reverted for a reason that is not visible in the diff.
 
 For these, reply with the context and ask the reviewer to decide. Do not implement and
 do not silently decline.

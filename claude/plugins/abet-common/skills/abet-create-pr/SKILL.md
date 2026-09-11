@@ -25,17 +25,18 @@ autonomous: the fully-rendered PR is shown first and created only after you say 
    `docs/POLICIES.md` pins an account for outward-facing GitHub actions, and the active
    account is not it, switch first: `gh auth switch --user <account>`. Getting this wrong
    attributes the PR to the wrong identity and is tedious to undo.
-7. **Cross-repo ordering** — if this is the **frontend** side of a cross-repo change:
-   the backend change must have reached the **`staging` branch** before this PR merges.
-   Verify it remotely with `/abet-verify-contract`; never by looking for the backend on
-   the local filesystem. If it is only on `develop`, say so: open the PR if you like, but
-   flag in the body that it is blocked on the backend being promoted. Merging frontend
-   code ahead of the API it calls lets it reach production first.
-   Put the verified spec SHA in the PR body.
-8. **The spec ships with the endpoints** — if this is the **backend** side and the change
-   altered any route, DTO or response shape, `openapi.json` must be regenerated
-   (`pnpm openapi:export`) and committed in this PR. A spec that lags the endpoints is
-   worse than no spec, because the frontend trusts it.
+7. **Both packages changed** — if `proposal.md` says `both` (or the diff simply touches
+   both), confirm both `## Backend` and `## Frontend` sections of `tasks.md` have their
+   tasks checked, and that `backend/openapi.json` is regenerated
+   (`pnpm --filter ./backend openapi:export`) and committed in this PR whenever a route,
+   DTO or response shape changed. Run `/abet-verify-contract` and put the spec SHA
+   (`git log -1 --format=%h -- backend/openapi.json`) in the PR body. There is no
+   `staging`-branch gate — the default is one PR for both packages, and when split, the
+   only ordering rule is that the backend PR merges into `develop` first.
+8. **The spec ships with the endpoints** — if the change altered any backend route, DTO or
+   response shape, `backend/openapi.json` must be regenerated
+   (`pnpm --filter ./backend openapi:export`) and committed in this PR. A spec that lags
+   the endpoints is worse than no spec, because the frontend trusts it.
 
 ## Steps
 

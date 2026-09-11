@@ -18,26 +18,33 @@ Three hand-maintained copies of the same prose is the drift this layout exists t
 node build/generate.mjs           # regenerate every provider
 node build/generate.mjs --check   # fail if anything is stale (CI)
 node build/generate.mjs claude    # one provider
-node shared/hooks/test/hooks.test.mjs   # 111 checks
+node shared/hooks/test/hooks.test.mjs   # the hook test suite
 ```
 
 Generated output **is committed**, so installing needs no build step.
 
 ## Install
 
+ABET ships as one monorepo, `UPC-ABET/ACC-SYS`, with `backend/` and `frontend/` as pnpm
+workspace packages. Install **all three plugins together, once, in `ACC-SYS`**:
+
 **Claude Code** — a real plugin marketplace:
 
 ```
 /plugin marketplace add UPC-ABET/abet-plugins
 /plugin install abet-common@abet-plugins
-/plugin install abet-backend@abet-plugins      # in the backend repo
-/plugin install abet-frontend@abet-plugins     # in the frontend repo
+/plugin install abet-backend@abet-plugins
+/plugin install abet-frontend@abet-plugins
 ```
 
 The marketplace manifest is at `.claude-plugin/marketplace.json` in the **repo root** —
 Claude Code looks for it there and nowhere else — and it points at the plugins under
 `claude/plugins/`. To install from a local checkout, point `/plugin marketplace add` at the
 repo root.
+
+Install scope for this team is **per-user** (`/plugin install ... ` at user or local
+scope, not project scope): `.claude/` is gitignored in `ACC-SYS`, so a project-scoped
+install would not be shared by committing it anyway.
 
 **Codex** — copy `codex/prompts/*.md` into `~/.codex/prompts/`. Codex reads `AGENTS.md`
 from the repository root for conventions.
@@ -67,7 +74,7 @@ That is why the policy checks are wired **twice**, from one implementation:
 - `shared/hooks/cli.mjs` is the git-hook entry point husky calls, which covers every
   provider. `--no-verify` *does* bypass these — hence keeping both layers.
 
-Wire it in a consuming repo:
+Wire it in a consuming repo — one root `.husky/`, covering both packages:
 
 ```sh
 # .husky/pre-commit
@@ -80,6 +87,8 @@ node <path-to-cli>/cli.mjs commit-msg "$1"
 node <path-to-cli>/cli.mjs pre-push
 ```
 
+In `ACC-SYS`, `<path-to-cli>` is `node_modules/abet-plugins/shared/hooks`.
+
 ## Instruction files in a consuming repo
 
 The three agents do **not** read the same file, and no plugin can substitute for the
@@ -87,7 +96,7 @@ project's own entry point:
 
 | Tool | Reads | Notes |
 | ---- | ----- | ----- |
-| Claude Code | `./CLAUDE.md` or `./.claude/CLAUDE.md` | **Does not read `AGENTS.md`** |
+| Claude Code | `./CLAUDE.md` or `./.claude/CLAUDE.md` | **Does not read `AGENTS.md`**. Nested `backend/CLAUDE.md` / `frontend/CLAUDE.md` load on demand when files under them are read. |
 | Codex | `AGENTS.md` | Repo root; nested files supported |
 | opencode | `AGENTS.md`, falling back to `CLAUDE.md` | |
 
@@ -95,14 +104,20 @@ project's own entry point:
 > the opposite explicitly. The vendor's docs win — do not delete `CLAUDE.md` on the
 > strength of that list.
 
-So a repo keeps **both**, thin, with the content living once in `docs/`:
+So a repo keeps **both**, thin, with the content living once in `docs/` — at the repo
+root **and** in each package:
 
 ```
-docs/POLICIES.md   the rules          ← content lives here
-docs/CONTEXT.md    the map
+docs/POLICIES.md            root: repo-wide rules   ← content lives here
+docs/CONTEXT.md              root: the map
 
-AGENTS.md          pointer stub — serves Codex and opencode
-CLAUDE.md          one line: @AGENTS.md
+backend/docs/POLICIES.md    backend's own rules      ← content lives here
+backend/docs/CONTEXT.md      backend's own map
+frontend/docs/POLICIES.md   frontend's own rules     ← content lives here
+frontend/docs/CONTEXT.md     frontend's own map
+
+AGENTS.md, backend/AGENTS.md, frontend/AGENTS.md      pointer stubs — serve Codex and opencode
+CLAUDE.md, backend/CLAUDE.md, frontend/CLAUDE.md       one line each: @AGENTS.md
 ```
 
 ## The pipeline
@@ -165,24 +180,27 @@ Headings alone break the completeness gate, which is literally
 tasks whether or not any work was done, so the gate silently passes and can never raise
 its blocker.
 
-### Cross-repo: contract at design time, generated spec as the enforcement
+### Backend and frontend: one change folder, generated spec as the enforcement
 
-Backend and frontend are separate repos. A change spanning both uses the **same slug in
-both**, with `proposal.md` and `contract.md` as identical copies and `design.md` /
-`tasks.md` holding only that repo's own side.
+Backend and frontend are packages in one repo (`ACC-SYS`), not separate repos. A change
+spanning both stays in **one** change folder, with `design.md` / `tasks.md` holding both
+sides as `## Backend` / `## Frontend` sections in the same file.
 
-- **Sequential** (one person, backend then frontend) — no contract file. The backend's
-  committed `openapi.json` *is* the contract. This is the default.
-- **Parallel** (two people, or the frontend can't wait) — `contract.md` agreed first.
+- **Sequential** (one person, backend then frontend, usually one PR) — no contract file.
+  `backend/openapi.json` on disk at HEAD *is* the contract. This is the default.
+- **Parallel** (two people, or the frontend can't wait) — `contract.md` optional, agreed
+  first, one copy.
 
-The backend commits `openapi.json` (`pnpm openapi:export`) in the same PR as the endpoints
-it describes, so a renamed field shows up as a line in the diff instead of a runtime error
-in the frontend three days later. Where the two disagree, **the spec wins**.
+The backend commits `openapi.json` (`pnpm --filter ./backend openapi:export`) in the same
+PR as the endpoints it describes, so a renamed field shows up as a line in the diff instead
+of a runtime error in the frontend three days later. Where the two disagree, **the spec
+wins**. `/abet-verify-contract` checks this locally, in the same working tree — no network
+fetch, no other repository.
 
-**Ordering rule**: the backend change reaches the `staging` **branch** before the frontend
-PR merges — an ordering guarantee, not a liveness one, since only `production` is deployed.
-`/abet-verify-contract` checks this remotely with `gh api` at each branch; it never reads
-another repo from disk.
+**Sequencing**: the default is one PR for both packages. When split, the backend PR merges
+into `develop` first — there is no requirement that it also reach `staging` before the
+frontend PR merges, since `staging` is a real deployed environment
+(https://accreditation-stg.tcupc.pe) rather than a merge gate.
 
 ### What the hooks block, and the one escape hatch
 
@@ -190,7 +208,7 @@ another repo from disk.
 | ---- | --------- |
 | `push-guard` | **Blocks** pushes to `develop`, `staging`, `production`, and unconditional force pushes. Parses subshells, `bash -c`, `-uf` clusters, `+refspec`, `git -C`/`-c` globals, chained commands. |
 | `commit-msg-validator` | **Blocks** non-Conventional-Commit subjects, multi-line messages, trailers, and `--no-verify`. |
-| `pre-commit-validator` | **Blocks** on staged secrets, unformatted files, lint problems, type errors, or failing related tests. Generated files (lockfiles, build output, `openapi.json`) are exempt from lint and format. |
+| `pre-commit-validator` | **Blocks** on staged secrets, unformatted files, lint problems, type errors, or failing related tests. Runs per workspace package, resolving each package's own eslint/prettier/tsc/jest; root-level files get prettier only. Generated files (lockfiles, build output, `openapi.json`) are exempt from lint and format. |
 | `branch-name-validator` | **Warns only.** Never blocks. |
 
 `--force-with-lease` and `--force-if-includes` are **allowed**; bare `--force` and `-f` are
@@ -218,7 +236,7 @@ message that merely contains the string does not unlock. All covered by the suit
 ### Hooks are Node, not shell
 
 No Git Bash, no `jq`, no PowerShell variants to keep in sync — the same code runs on macOS
-and Windows, and node is already a dependency of every repo here.
+and Windows, and node is already a dependency of the consuming repo.
 
 ## Layout
 
@@ -246,3 +264,8 @@ and Windows, and node is already a dependency of every repo here.
 Everything under `claude/`, `codex/` and `opencode/` except the hand-maintained manifests
 (`plugin.json`, `marketplace.json`, `hooks.json`, `.mcp.json`) is generated. Edit
 `shared/`, then run the generator.
+
+`templates/` and `reference/conventions.md` are copied only into `abet-common` — no
+backend or frontend skill references either via `${CLAUDE_PLUGIN_ROOT}`, and `abet-common`
+is always installed alongside the stack profiles. `codex/` and `opencode/` still get both,
+since they have no per-plugin split.

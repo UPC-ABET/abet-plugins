@@ -1,136 +1,113 @@
 # Verify the backend contract
 
-Answers two questions the frontend cannot answer for itself:
+Answers one question: **does what the frontend calls match what the backend actually
+ships?** — checked against `backend/openapi.json` on disk, because backend and frontend
+are packages in the same repository and the same working tree.
 
-1. **How far has the backend got?** — merged to `develop`, promoted to `staging`, released
-   to `production`.
-2. **Does what shipped match what we agreed?** — `contract.md`, or the types in this repo.
-
-Everything here is **remote**. This skill never reads another repository from disk. A
-teammate's checkout may sit on any branch, with uncommitted work, describing endpoints
-that exist nowhere — so the local filesystem is not evidence of anything. It also means
-this runs identically on any machine and in CI.
-
-## Configuration
-
-One value, declared once in this repo's `docs/CONTEXT.md` under external integrations, or
-as an environment variable. Never a filesystem path.
-
-| Value | Example | Env override |
-| ----- | ------- | ------------ |
-| Backend repository | `UPC-ABET/BACK-ACREDITACION-3.0` | `ABET_BACKEND_REPO` |
-
-If it is missing, say so and stop rather than guessing.
-
-There is no environment to call. The entire check is `gh api` against branches, so it
-needs no running backend, no staging host, and no credentials beyond `gh`.
+This is a **local, same-tree** check. There is no `gh api` call, no remote repository, and
+no environment to reach — the spec is a committed file at a known path, read at whatever
+ref you are on.
 
 ## Steps
 
-### 1. Fetch the spec at each branch in the promotion chain
+### 1. Enumerate the endpoints the frontend calls
 
-The backend commits `openapi.json`, generated from its Swagger decorators. Promotion runs
-`develop → staging → production`, fast-forward only, so a branch tells you exactly how far
-the change has travelled:
+Search `frontend/src` for API client call sites:
 
 ```bash
-for ref in develop staging production; do
-  gh api "repos/$ABET_BACKEND_REPO/contents/openapi.json?ref=$ref" \
-    -H "Accept: application/vnd.github.raw" > "/tmp/spec-$ref.json" 2>/dev/null \
-    && echo "$ref: present" || echo "$ref: not there yet"
-done
+rg -n "api(Get|Post|Put|Patch|Delete|PostBlob)\(" frontend/src
 ```
 
-> **The ref is not optional.** This repository's GitHub default branch is `production`,
-> so a request without `?ref=` silently returns the *production* spec — older than what
-> you are building against, and wrong in a way that looks fine.
+For each call, extract the method and the path argument. Normalise path params to the
+spec's placeholder form — a call built as `` `/rubrics/${id}/weights` `` matches the spec's
+`/rubrics/{id}/weights`.
 
-A **404 is a clean answer**: the change has not reached that branch. Report it and stop.
-Do not fall back to reading someone's working copy.
+If the change is scoped to one module, you can narrow the search to that module's
+`services/` folder, but do the full sweep at least once per PR.
 
-Record the blob SHA of the ref you verified against — that is what makes this check
-reproducible and reviewable:
+### 2. Check each call exists in the spec at HEAD
+
+Read `backend/openapi.json` at the current HEAD and confirm, for every normalised
+call site:
+
+- The path and method exist.
+- Request fields the frontend sends match the spec's request shape (names, types,
+  required vs optional).
+- The response shape the frontend's type expects matches the spec's response, including
+  the envelope (`data`, `message`).
+- Scope headers the endpoint requires (`X-School-Id`, `X-Modality-Type-Id`,
+  `X-Academic-Period-Id`) are actually sent.
+
+A call with no matching operation in the spec is a **finding**, not a warning — either the
+frontend is calling something that does not exist yet, or the spec is stale.
+
+### 3. On a PR branch, diff the spec against the merge-base
 
 ```bash
-gh api "repos/$ABET_BACKEND_REPO/contents/openapi.json?ref=staging" --jq '.sha'
+git diff $(git merge-base origin/develop HEAD) HEAD -- backend/openapi.json
 ```
 
-### 2. Read what each branch means
+Read the diff as a contract change: list added operations, removed operations, and
+renamed or retyped fields. A removed or renamed operation that a frontend call site still
+targets is a **blocker** — it will compile and fail at runtime.
 
-| Branch | Means |
-| ------ | ----- |
-| `develop` | Merged. The backend dev is done, nothing is released. |
-| `staging` | **Promoted — this is the gate for merging the frontend PR.** |
-| `production` | Released. Currently the only branch that is actually deployed. |
-
-The endpoints this change calls must be present in the **`staging`** spec before the
-frontend PR merges. That guarantees the backend leads the frontend through the promotion
-chain, so frontend code can never reach production ahead of the API it calls.
-
-Note what this check is *not*: `staging` is a branch, not a running environment. Being
-present there proves the code is promoted and queued for release — it does not prove
-anything responds. Runtime verification happens against a locally-run backend, or against
-production once released.
-
-### 3. Does it match what we agreed?
+### 4. Does it match contract.md, if one exists?
 
 **Parallel mode** — `openspec/changes/<slug>/contract.md` exists. For every endpoint in it,
-check against the fetched spec:
+check against `backend/openapi.json` at HEAD:
 
 - Path and method present
 - Request shape: field names, types, required vs optional
 - Response shape, including the envelope (`data`, `message`)
 - Error statuses and their i18n keys
-- Scope headers declared (`X-School-Id`, `X-Modality-Type-Id`, `X-Academic-Period-Id`)
+- Scope headers declared
 - Pagination shape, if contracted
 
-**Sequential mode** — no `contract.md`. Then verify this repo's hand-written types in the
-relevant `types/index.ts` against the spec instead. Same checks, different reference.
+**Sequential mode** — no `contract.md`. Then step 2 above (frontend call sites vs. spec) is
+the whole check.
 
-### 4. Report
+### 5. Report
 
 ```
 ## Contract verification — <slug>
 
-Backend repo: UPC-ABET/BACK-ACREDITACION-3.0
-Verified against: openapi.json @ 4b9c2f1 (staging)
+Spec: backend/openapi.json @ 4b9c2f1 (git log -1 --format=%h -- backend/openapi.json)
 
-| Endpoint                        | develop | staging | production | Matches contract |
-| ------------------------------- | ------- | ------- | ---------- | ---------------- |
-| POST /rubrics/{id}/weights/bulk | ✅      | ✅      | —          | ⚠️ see below     |
+| Endpoint                        | In spec | Frontend call matches |
+| -------------------------------- | ------- | ---------------------- |
+| POST /rubrics/{id}/weights/bulk  | ✅      | ⚠️ see below           |
 
 ### Drift
 
-| Field | contract.md | shipped spec | Action |
-| ----- | ----------- | ------------ | ------ |
-| `weight` | `number` | `string` | Spec wins — update the frontend type |
+| Field    | contract.md / frontend type | spec | Action |
+| -------- | ---------------------------- | ---- | ------ |
+| `weight` | `number`                     | `string` | Spec wins — update the frontend type |
 ```
 
 Verdict, one of:
 
-- **✅ PROMOTED AND MATCHING** — on `staging`, shapes agree. Safe to merge the frontend PR.
-- **⚠️ PROMOTED WITH DRIFT** — the endpoints are on `staging` but shapes differ. **The spec
-  wins.** Update the frontend types, and add a *dated correction* to `contract.md` in this
-  repo (and tell the backend dev to mirror it in theirs). Never rewrite the agreement.
-- **⛔ MERGED, NOT PROMOTED** — on `develop` only. The frontend PR must not merge yet; ask
-  for the backend to be promoted to `staging`.
-- **⛔ NOT MERGED** — the backend has not landed at all. Keep developing against
-  `contract.md`.
+- **✅ MATCHING** — every call site resolves in the spec, shapes agree. Safe to merge.
+- **⚠️ DRIFT** — the endpoints exist but shapes differ. **The spec wins.** Update the
+  frontend types, and add a *dated correction* to `contract.md` if one exists. Never
+  rewrite the agreement.
+- **⛔ MISSING** — a frontend call has no matching operation in `backend/openapi.json` at
+  HEAD. Either the backend side of this change is not committed yet, or the frontend is
+  calling the wrong path/method.
 
-### 5. When drift is too large to absorb
+### 6. When drift is too large to absorb
 
 If the shipped shape breaks the screen rather than requiring a type edit, this is not a
-frontend fix. Report it, and take it back through `/abet-design-feature` — with a dated
-scope extension on `proposal.md`. Quietly reshaping the UI to fit an unexpected API is how
-a change stops matching its own acceptance criteria.
+one-line frontend fix. Report it, and take it back through `/abet-design-feature` — with a
+dated scope extension on `proposal.md`. Quietly reshaping the UI to fit an unexpected API
+is how a change stops matching its own acceptance criteria.
 
 ## Record what you verified
 
 Put the spec SHA in the PR body:
 
 ```
-Contract: openapi.json @ 4b9c2f1 (staging), verified 2026-07-30
+Contract: backend/openapi.json @ 4b9c2f1, verified 2026-09-10
 ```
 
-One line, and it makes "which contract version is this coded against?" answerable in
-review — which reading a file off a disk never can.
+One line, and it makes "which version of the spec was this built against?" answerable in
+review.

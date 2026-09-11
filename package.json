@@ -1,6 +1,6 @@
 {
   "name": "abet-plugins",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "ABET delivery pipeline for Claude Code, Codex and opencode, plus the shared git-policy checks",
   "license": "UNLICENSED",
   "private": false,

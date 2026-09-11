@@ -24,5 +24,5 @@ There is no plugin or hook mechanism, so:
 | `/abet-migration` | backend | Create, review and run a TypeORM migration safely against a production database. |
 | `/api-performance-optimizer` | backend | Measure-first endpoint optimizer for the NestJS + TypeORM backend. |
 | `/abet-module` | frontend | Create or audit a frontend domain module against the required layout and import rules. |
-| `/abet-verify-contract` | frontend | Confirm the backend has promoted the API this change depends on, and that what shipped matches contract. |
+| `/abet-verify-contract` | frontend | Confirm the frontend's API calls match backend/openapi. |
 | `/ui-performance-optimizer` | frontend | Measure-first performance optimizer for the Next. |

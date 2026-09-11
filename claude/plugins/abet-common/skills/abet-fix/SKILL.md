@@ -71,8 +71,8 @@ regression test that was never observed failing does not pin anything.
 Name it after the behaviour, not the bug: `returns only active programs for the GRA
 report`, not `fixes issue with report`.
 
-Put it where the module's other tests live, following the testing conventions in
-`docs/POLICIES.md`.
+Put it where the module's other tests live, following the testing conventions in that
+package's `docs/POLICIES.md` (`backend/docs/POLICIES.md` or `frontend/docs/POLICIES.md`).
 
 ### 5. Apply the minimal fix
 
@@ -87,10 +87,12 @@ Re-run the regression test, then the module's suite, then the typecheck.
 
 ### 6. Update docs only if a documented rule was wrong
 
-Usually nothing. But if the bug existed because `docs/CONTEXT.md` documented a business
-rule incorrectly, fix that line — the wrong documentation would have reproduced the bug.
+Usually nothing. But if the bug existed because the package's `docs/CONTEXT.md`
+(`backend/docs/CONTEXT.md` or `frontend/docs/CONTEXT.md`, or the root one for a
+cross-cutting fact) documented a business rule incorrectly, fix that line — the wrong
+documentation would have reproduced the bug.
 
-Never touch `docs/POLICIES.md` or `docs/adr/`.
+Never touch any `docs/POLICIES.md` or `docs/adr/`, at root or package level.
 
 ### 7. Propose the commit and stop
 
