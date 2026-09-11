@@ -1,38 +1,42 @@
 # Backend stack rules
 
-Loaded by `/abet-implement`, `/abet-audit-pr` and `/abet-fix` when working in the backend
-repository.
+Loaded by `/abet-implement`, `/abet-audit-pr` and `/abet-fix` when working in the
+`backend/` package.
 
 This file holds **stack mechanics** — how to run things, and the failure modes specific
 to NestJS + TypeORM here. The *conventions* (naming, module layout, i18n keys, validation
-pattern, response format) live in `docs/POLICIES.md` in the repo itself. Read both.
+pattern, response format) live in `backend/docs/POLICIES.md`. Read both, plus the
+repo-root `docs/POLICIES.md`.
 
 ## Stack
 
-NestJS 11 · TypeScript · PostgreSQL + TypeORM 0.3 · pnpm · jest · eslint + prettier ·
+NestJS 11 · TypeScript · PostgreSQL + TypeORM 0.3 · pnpm workspace · jest · eslint + prettier ·
 JWT (passport-jwt) + Microsoft Entra ID (MSAL) · Zod-validated env.
 
 ## Commands
 
+Run from the repo root with the path-filter form; from inside `backend/`, drop the
+`pnpm --filter ./backend` prefix and run the plain script.
+
 | Purpose | Command |
 | ------- | ------- |
-| Tests | `pnpm test` |
-| One file | `npx jest --no-coverage src/path/to/file.spec.ts` |
-| Typecheck | `pnpm exec tsc --noEmit -p tsconfig.build.json` |
-| Lint | `pnpm lint` / `pnpm lint:fix` |
-| Format | `pnpm format` |
-| Everything | `pnpm check` |
-| Export API spec | `pnpm openapi:export` |
-| Create migration | `pnpm migration:create src/database/migrations/<kebab-name>` |
-| Run migrations | `pnpm migration:run` |
-| Revert one | `pnpm migration:revert` |
+| Tests | `pnpm --filter ./backend test` |
+| One file | `pnpm --filter ./backend exec jest --no-coverage src/path/to/file.spec.ts` |
+| Typecheck | `pnpm --filter ./backend exec tsc --noEmit -p tsconfig.build.json` |
+| Lint | `pnpm --filter ./backend lint` / `pnpm --filter ./backend lint:fix` |
+| Format | `pnpm --filter ./backend format` |
+| Everything | `pnpm --filter ./backend check` |
+| Export API spec | `pnpm --filter ./backend openapi:export` |
+| Create migration | `pnpm --filter ./backend migration:create src/database/migrations/<kebab-name>` |
+| Run migrations | `pnpm --filter ./backend migration:run` |
+| Revert one | `pnpm --filter ./backend migration:revert` |
 
-**pnpm, never npm.** The lockfile is `pnpm-lock.yaml`.
+**pnpm, never npm.** The lockfile is the root `pnpm-lock.yaml`, shared by both packages.
 
 ## Where things go
 
 ```
-src/
+backend/src/
 ├── commons/     base controller/service/repository/entity/validation, decorators, configs
 ├── database/    typeorm.config.ts, migrations/, scripts/seeds/
 ├── libs/        encrypt.service, secure.functions, global.functions
@@ -103,8 +107,9 @@ file the audit will always look for.
   full report in memory is how this service gets OOM-killed on a real academic period.
 
 ### The API spec is a committed artifact
-`openapi.json` is generated from the Swagger decorators by `pnpm openapi:export` and is
-**committed**. This repo is the frontend's source of truth for the API.
+`backend/openapi.json` is generated from the Swagger decorators by
+`pnpm --filter ./backend openapi:export` and is **committed**. It is the frontend's source
+of truth for the API — read directly on disk, since both packages share this repo.
 
 Regenerate and commit it **in the same PR** as any change to a route, a DTO, or a response
 shape. A spec that lags the endpoints is worse than no spec, because the frontend trusts
@@ -113,7 +118,7 @@ it and has no way to detect the lag.
 Two consequences worth internalising:
 
 - The spec diff *is* the contract review. A renamed or retyped field shows up as a line in
-  the PR even though nothing in this repo fails to compile — that is the point, and it is
+  the PR even though nothing in `backend/` fails to compile — that is the point, and it is
   the only place a breaking change becomes visible before it reaches the frontend.
 - Swagger decorators are therefore load-bearing, not documentation. An endpoint with no
   `@ApiResponse` type, or a DTO whose decorators disagree with its TypeScript type,
@@ -123,8 +128,8 @@ Scope headers must appear in the spec too — apply the Swagger header decorator
 the value decorator, or the frontend cannot see that the endpoint requires them.
 
 ### Env
-Every variable is declared in `src/commons/configs/env.config.ts` with Zod. Required vars
-fail at bootstrap. Reading `process.env` directly anywhere else is a finding.
+Every variable is declared in `backend/src/commons/configs/env.config.ts` with Zod.
+Required vars fail at bootstrap. Reading `process.env` directly anywhere else is a finding.
 
 ## Testing
 

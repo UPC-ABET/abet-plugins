@@ -17,9 +17,11 @@ enough that someone else could implement it and someone else again could verify 
 
 Before asking the requester anything, read what the repo already tells you:
 
-- `docs/POLICIES.md` — the mandatory rules this change must respect.
-- `docs/CONTEXT.md` — stack, structure, domain vocabulary, business rules.
-- `docs/adr/` — index the titles; note any ADR that touches this area.
+- `docs/POLICIES.md` — the repo-wide mandatory rules this change must respect.
+- `docs/CONTEXT.md` — repo-wide topology: server, environments, deploy pipeline, CI.
+- `docs/adr/` — index the titles; note any cross-cutting ADR that touches this area.
+- `backend/docs/{POLICIES,CONTEXT}.md` and/or `frontend/docs/{POLICIES,CONTEXT}.md` —
+  whichever package(s) the request looks like it touches.
 - `openspec/specs/` — has something like this been done before? Prior art is the
   fastest way to a good proposal, and the design will want to point back at it.
 
@@ -47,7 +49,7 @@ the code, note it and move on; do not perform an interview for its own sake.
 | Goals | What must be true when this is done. |
 | Non-goals | What is explicitly out of scope, so review does not drift into it. |
 | Acceptance criteria | Testable Given/When/Then. Each one must be verifiable by a human or a test. |
-| Affected repos | Backend only, frontend only, or both. This decides single-repo vs cross-repo in design. |
+| Packages affected | Backend only, frontend only, or both. This decides the `## Backend`/`## Frontend` sectioning in design. |
 | Dependencies | Other changes, data migrations, external systems (Banner, uPlanner, Azure, S3). |
 | Risks | What could break, what is uncertain, what has bitten us here before. |
 

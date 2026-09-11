@@ -20,13 +20,11 @@ like everything else — `develop` is protected and nothing is pushed to it dire
    If it is open, closed-unmerged, or you cannot find it — **stop**. Archiving an
    unmerged change puts the spec in `specs/` while the code does not exist, which is
    exactly backwards.
-4. Tasks are complete: no `- [ ]` remaining in `tasks*.md`.
-5. **Cross-repo changes archive per repo, backend first.** If the same slug exists in the
-   other repository, **both** feature PRs must be merged before either side is archived.
-   Archiving the backend while the frontend PR is still open leaves the frontend's change
-   folder pointing at a spec that has moved to `specs/` in the other repo.
-   Each repo gets its own `chore/archive-<slug>` branch and its own chore PR — there is no
-   combined archive.
+4. Tasks are complete: no `- [ ]` remaining in `tasks*.md` (both `## Backend` and
+   `## Frontend` sections, when the change touched both packages).
+5. **One change folder, one archive.** Backend and frontend are packages in this repo, not
+   separate repos, so there is exactly one `openspec/changes/<slug>/` to move and one
+   `chore/archive-<slug>` branch and PR — never a per-package archive.
 
 ## Steps
 
@@ -59,10 +57,10 @@ Before committing, grep for anything that still points at the change as in-fligh
 grep -rn "changes/<slug>" --include="*.md" .
 ```
 
-The usual offender is a line in `docs/CONTEXT.md` naming the in-flight change. Fix it
-here — the docs-ship-with-the-change rule applies to the archive PR too, and a stale
-"one change in flight" line is exactly the kind of rot that makes people stop trusting
-the file.
+The usual offender is a line in root `docs/CONTEXT.md`, `backend/docs/CONTEXT.md` or
+`frontend/docs/CONTEXT.md` naming the in-flight change. Fix it here — the
+docs-ship-with-the-change rule applies to the archive PR too, and a stale "one change in
+flight" line is exactly the kind of rot that makes people stop trusting the file.
 
 If you do fix a doc line, the PR is no longer a pure rename. That is fine and correct;
 just say so in the PR body.

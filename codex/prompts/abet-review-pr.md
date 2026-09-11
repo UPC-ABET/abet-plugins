@@ -18,10 +18,13 @@ Then establish context the diff alone cannot give you:
 
 1. **Base branch** should be `develop`. A PR targeting `staging` or `production` directly
    is a **blocker** — those only ever receive fast-forward promotions.
-2. **Load the rules**: `docs/POLICIES.md`, the relevant parts of `docs/CONTEXT.md`, any ADR
-   the change touches, and the active profile's stack rules file. You are reviewing against
-   the project's rules, not your personal preferences — a finding you cannot tie to a rule
-   or a defect is a *suggestion*, and must be labelled as one.
+2. **Load the rules**: classify the diff by `backend/` / `frontend/` path prefix to know
+   which package(s) it touches. Read root `docs/POLICIES.md` and the relevant parts of
+   root `docs/CONTEXT.md`, any ADR the change touches, then the same
+   (`POLICIES.md`/`CONTEXT.md`/`adr/`) under `backend/docs/` and/or `frontend/docs/` for
+   whichever package(s) the diff touches, plus that profile's stack rules file. You are
+   reviewing against the project's rules, not your personal preferences — a finding you
+   cannot tie to a rule or a defect is a *suggestion*, and must be labelled as one.
 3. **CI status.** Failing checks are the author's to fix; note it and do not spend review
    effort on what CI already caught.
 4. **Read the change folder** if one exists: `proposal.md` for the acceptance criteria,
@@ -74,21 +77,20 @@ Instruct every lens: **only report what is in this diff.** Pre-existing problems
 untouched code bury the findings that matter. If something adjacent is genuinely alarming,
 raise it once, separately, marked as out of scope.
 
-## Phase 3 — cross-repo checks
+## Phase 3 — contract checks
 
-If the PR is the **frontend** side of a cross-repo change:
+If the diff touches `frontend/src`:
 
-- Has the backend reached the `staging` branch? Verify remotely with
-  `/abet-verify-contract`. If it has not, merging this is premature — **blocker**.
-- Do the types match the backend's committed `openapi.json`? A renamed field compiles fine
-  and fails at runtime.
+- Run `/abet-verify-contract` (a local, same-tree check against `backend/openapi.json` at
+  HEAD — no remote fetch). Do the frontend's API call sites match the spec? A renamed
+  field compiles fine and fails at runtime.
 
-If the PR is the **backend** side and it touched a route, DTO or response shape:
+If the diff touches `backend/src` and altered a route, DTO or response shape:
 
-- Was `openapi.json` regenerated and committed in the same PR? If not, **blocker** — the
-  frontend reads that file and will be wrong.
+- Was `backend/openapi.json` regenerated and committed in the same PR? If not,
+  **blocker** — the frontend reads that file directly and will be wrong.
 - Read the spec diff as a contract change. A retyped field is breaking even when nothing in
-  this repo fails to compile.
+  `backend/` fails to compile.
 
 ## Phase 4 — synthesise
 

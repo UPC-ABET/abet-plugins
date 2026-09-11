@@ -79,7 +79,7 @@ shared/    → shared/ ONLY
 The one that matters most:
 
 ```bash
-rg "from '@/modules" src/shared/
+rg "from '@/modules" frontend/src/shared/
 ```
 
 **Any hit is a blocker.** `shared/` is the bottom of the dependency tree. A
@@ -89,7 +89,7 @@ importing code belongs in the module. Decide which; do not add the import.
 ### 2. Check for internal-path imports
 
 ```bash
-rg "from '@/modules/[a-z-]+/(?!components|hooks|types|constants|schemas|services)" src/
+rg "from '@/modules/[a-z-]+/(?!components|hooks|types|constants|schemas|services)" frontend/src/
 ```
 
 Cross-module imports go through the barrel (`@/modules/x`) or a public folder
@@ -99,7 +99,7 @@ implementation and breaks the moment it reorganises.
 ### 3. Check the admin namespace rule
 
 ```bash
-rg "from '@/modules/admin'" src/
+rg "from '@/modules/admin'" frontend/src/
 ```
 
 **Any hit is a blocker.** `modules/admin/` is a namespace folder and has **no**
@@ -126,8 +126,8 @@ into the page as tabs, not into the sidebar as a third level.
 ### 6. Verify
 
 ```bash
-npx tsc --noEmit
-pnpm lint
+pnpm --filter ./frontend exec tsc --noEmit
+pnpm --filter ./frontend lint
 ```
 
 Both must be clean. Lint runs with `--max-warnings 0`, so a warning is a failure.

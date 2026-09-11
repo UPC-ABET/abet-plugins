@@ -62,11 +62,11 @@ carries its own checkbox:
 - [ ] Task complete
 
 **Files**
-- `src/modules/evaluation/rubrics/api/rubrics.controller.ts` (modify)
-- `src/modules/evaluation/rubrics/rubrics.service.spec.ts` (test)
+- `backend/src/modules/evaluation/rubrics/api/rubrics.controller.ts` (modify)
+- `backend/src/modules/evaluation/rubrics/rubrics.service.spec.ts` (test)
 
 **Steps (TDD)**
-1. Write the failing spec: `pnpm test -- rubrics.service.spec` → expect red.
+1. Write the failing spec: `pnpm --filter ./backend test -- rubrics.service.spec` → expect red.
 2. Implement `bulkUpdateWeights` in the service.
 3. Re-run → expect green.
 
@@ -79,99 +79,93 @@ Headings alone are not enough. The completeness gate is literally
 done, so the gate silently passes. Marking a task done means checking its box **and**
 appending `✅ DONE (YYYY-MM-DD)` to the heading, never one without the other.
 
-## Cross-repo changes
+## Changes spanning backend and frontend
 
-The backend and frontend live in **separate repositories**. A change touching both gets
-the **same slug in both repos**, and each repo carries a change folder:
+Backend (`backend/`, NestJS + TypeORM) and frontend (`frontend/`, Next.js) are **packages
+in one pnpm workspace repository** (`ACC-SYS`), not separate repos. A change touching both
+still gets **one** change folder at the repo root — there is nothing left to duplicate:
 
 ```
-<backend>/openspec/changes/<slug>/     <frontend>/openspec/changes/<slug>/
-├── proposal.md   ← identical ─────────┤ proposal.md
-├── contract.md   ← identical ─────────┤ contract.md     (parallel mode only)
-├── design.md       backend's side     │ design.md         frontend's side
-└── tasks.md        backend's tasks    └ tasks.md          frontend's tasks
+openspec/changes/<slug>/
+├── proposal.md     "Packages affected: backend | frontend | both" (mandatory line)
+├── contract.md     optional — see below
+├── design.md       ## Backend and ## Frontend H2 sections in the same file
+└── tasks.md        ## Backend and ## Frontend H2 sections in the same file
 ```
 
-`proposal.md` and `contract.md` are **identical copies**: they are the shared agreement,
-settled once at design time and rarely edited. `design.md` and `tasks.md` hold only that
-repo's own side, so they can change through review rounds without having to be kept in
-sync across two repositories.
+When `proposal.md` says `both`, `design.md` and `tasks.md` hold both sides as `## Backend`
+and `## Frontend` sections in the **same file**, not two files. The completeness gate is
+unchanged: `grep -c '^- \[ \]' openspec/changes/<slug>/tasks*.md` counts every checkbox in
+the file regardless of which H2 section it sits under.
 
-Duplicating the proposal is deliberate. A developer working in one repo must be able to
-read the whole story without checking out the other one.
+### Contract: optional, for parallel work only
 
-### Two modes — decide per change, at design time
-
-| | **Sequential** | **Parallel** |
+| | **Sequential** (default) | **Parallel** |
 | --- | --- | --- |
-| When | One person does the backend, merges it, then does the frontend | Two people, or the frontend must start before the backend lands |
-| `contract.md` | **Not created.** `openapi.json` is the contract | **Required**, agreed before either side writes code |
-| Frontend codes against | The real committed spec | `contract.md`, then reconciles against the spec |
+| When | One person does the backend, then the frontend, usually one PR | Two people, or the frontend starts before the backend code exists |
+| `contract.md` | **Not created.** `backend/openapi.json` on disk at HEAD is the contract | **Optional**, one copy, agreed before either side writes code |
+| Frontend codes against | `backend/openapi.json` directly, same working tree | `contract.md`, then reconciles against the spec once it exists |
 
-Sequential is the lower-ceremony default and is usually correct. Only write a
-`contract.md` when the frontend genuinely cannot wait for the backend — otherwise it is a
-second source of truth that will drift.
+Sequential is the lower-ceremony default and is usually correct. `contract.md` earns its
+keep only when two people are working in parallel and the frontend genuinely cannot wait
+— otherwise it is a second source of truth that will drift.
 
 ### The generated spec is the source of truth
 
-The backend commits `openapi.json`, generated from its Swagger decorators
-(`pnpm openapi:export`). It ships **in the same PR** as the endpoints it describes.
+`backend/openapi.json` is committed and regenerated from the Swagger decorators
+(`pnpm --filter ./backend openapi:export`) **in the same PR** as any route, DTO or
+response-shape change it describes.
 
-`contract.md` is a design-time *agreement*, not a record. Once the backend is
-implemented, **the generated spec wins** — the same rule as "the diff wins" for docs. If
-they disagree, correct `contract.md` with a dated append and say why.
+`contract.md`, when it exists, is a design-time *agreement*, not a record. Once the
+backend is implemented, **the generated spec wins** — the same rule as "the diff wins" for
+docs. If they disagree, correct `contract.md` with a dated append and say why.
 
 This is what makes the contract checkable rather than aspirational: a renamed field shows
-up as a line in the backend PR's diff, instead of surfacing as a runtime error in the
+up as a line in the backend commit's diff, instead of surfacing as a runtime error in the
 frontend three days later.
 
-### The repos verify each other remotely, never through the filesystem
+### The frontend checks the spec in the same tree — no remote fetch
 
-The two repositories — and the two profile plugins — are **independent**. Neither reads
-the other from disk, and `abet-frontend` does not require `abet-backend` to be installed.
+Both packages sit in the **same working tree**, so `/abet-verify-contract` is a local,
+same-tree check: it enumerates the endpoints the frontend calls
+(`apiGet`/`apiPost`/`apiPut`/`apiPatch`/`apiDelete`/`apiPostBlob` call sites under
+`frontend/src`), normalises path params, and confirms each exists in
+`backend/openapi.json` at HEAD. On a PR branch it also diffs the spec against the
+merge-base with `develop` to list added, removed and renamed operations. There is no
+`gh api` call and no other repository to stay independent from.
 
-The frontend confirms how far the backend has got by fetching its published spec with
-`gh api` at each branch in the promotion chain (`/abet-verify-contract`). A 404 is a clean
-"not there yet". No running environment is involved — it is a branch check, so it needs no
-deployed backend and no credentials beyond `gh`.
+### Sequencing
 
-Reading a colleague's working tree is not evidence. It may be on any branch, with
-uncommitted work, describing endpoints that exist nowhere — and the result cannot be
-reproduced on another machine or in CI. Whatever version was consulted is recorded as a
-spec SHA in the PR body, so review can answer *which contract this was built against*.
+The default is **one PR carrying both packages**. If a change is deliberately split into
+two PRs, the backend PR merges into `develop` **first** — but nothing requires it to reach
+`staging` before the frontend PR merges. `staging` is a real deployed environment
+(https://accreditation-stg.tcupc.pe), where runtime verification happens before promoting
+to `production` (https://accreditation.tcupc.pe); it is not a merge gate.
 
-### Sequencing — the one ordering rule
-
-**The backend change reaches the `staging` branch before the frontend PR merges.**
-
-Promotion is `develop → staging → production`, fast-forward only, so the branch a change
-sits on says how far it has travelled. Requiring the backend to be on `staging` first
-guarantees it leads the frontend through the chain — frontend code can never reach
-production ahead of the API it calls.
-
-`merged` and `promoted` are different states, and only the second satisfies this rule.
-Note that `staging` is a **branch, not a running environment**: today only `production` is
-actually deployed. Being on `staging` proves the code is promoted and queued for release,
-not that anything responds. Runtime verification happens against a locally-run backend, or
-against production once released.
-
-The frontend may be *developed* in parallel throughout; it just may not merge ahead of the
-API it depends on.
-
-Archiving follows the same order: two archive PRs, one per repo, and the frontend's only
-after both feature PRs have merged.
+Archiving is **one chore PR**: `git mv openspec/changes/<slug> openspec/specs/<slug>`
+moves the whole folder — both packages' sides — at once.
 
 ## Documentation
 
-| File               | Holds                                                       | Written by            |
-| ------------------ | ----------------------------------------------------------- | --------------------- |
-| `docs/POLICIES.md` | Mandatory rules — the things you can violate                 | Humans. Never a skill. |
-| `docs/CONTEXT.md`  | Descriptive map — stack, structure, vocabulary, business rules | `/abet-implement`, `/abet-audit-pr` flag staleness |
-| `docs/adr/`        | One numbered, immutable decision per file                    | `/abet-adr` only      |
-| `AGENTS.md`        | Pointer stub to the three above                              | Rarely                |
+Two layers. Root docs hold cross-cutting rules and topology; each package holds its own
+stack-specific rules and map. Every skill reads the **root** docs plus the docs of
+**every package the change touches**.
 
-`docs/POLICIES.md` is read-only to every skill. If a change needs a policy altered,
-that is a conversation with the team, not an edit.
+| File | Holds | Written by |
+| ---- | ----- | ---------- |
+| `docs/POLICIES.md` | Repo-wide mandatory rules — git, branches, PR base, promotion, openspec location, CI gates, env/secrets handling | Humans. Never a skill. |
+| `docs/CONTEXT.md` | Repo-wide topology — server, environments, ports, RDS, deploy pipeline, CI | `/abet-implement`, `/abet-audit-pr` flag staleness |
+| `docs/adr/` | Cross-cutting decisions, one numbered immutable file each | `/abet-adr` only |
+| `backend/docs/POLICIES.md` | Backend's mandatory rules — naming, module layout, validation pattern, response format | Humans. Never a skill. |
+| `backend/docs/CONTEXT.md` | Backend's descriptive map — stack, structure, vocabulary, business rules | `/abet-implement`, `/abet-audit-pr` flag staleness |
+| `backend/docs/adr/` | Backend-only decisions | `/abet-adr` only |
+| `frontend/docs/POLICIES.md` | Frontend's mandatory rules | Humans. Never a skill. |
+| `frontend/docs/CONTEXT.md` | Frontend's descriptive map | `/abet-implement`, `/abet-audit-pr` flag staleness |
+| `frontend/docs/adr/` | Frontend-only decisions | `/abet-adr` only |
+| `AGENTS.md` (root, `backend/`, `frontend/`) | Pointer stub to that level's docs | Rarely |
+
+`docs/POLICIES.md` at any level is read-only to every skill. If a change needs a policy
+altered, that is a conversation with the team, not an edit.
 
 ## Git
 

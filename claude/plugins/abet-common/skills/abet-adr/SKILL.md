@@ -12,7 +12,7 @@ Code shows what the system does, never why it does that instead of the obvious
 alternative. Without the record, someone finds a rule that looks wrong six months from
 now, "fixes" it, and reintroduces the problem it was preventing.
 
-This is the only skill permitted to write `docs/adr/`.
+This is the only skill permitted to write a `docs/adr/` — at root or in a package.
 
 ## When a decision needs an ADR
 
@@ -21,14 +21,14 @@ Any of these:
 - Datastore, message broker or cache choice
 - Authentication or payments provider
 - A public API contract change, or any breaking change
-- A new module boundary, or splitting work across repositories
+- A new module boundary, or splitting work across the `backend`/`frontend` packages
 - Language, runtime or framework
 - Contradicting an existing ADR
 
 ## When it does not
 
 - Trivial choices with no lasting consequence
-- Anything already settled in `docs/POLICIES.md`
+- Anything already settled in a `docs/POLICIES.md`
 - Ordinary feature or bug work — that belongs in commits and the openspec change
 
 If you are unsure, ask: would someone reasonably try to undo this without knowing the
@@ -36,12 +36,21 @@ history? If yes, write it.
 
 ## Steps
 
+### 0. Pick the right adr/ directory
+
+Cross-cutting decisions (topology, CI/CD, a choice affecting both packages, or anything in
+root `docs/POLICIES.md`/`docs/CONTEXT.md`) go in root `docs/adr/`. A decision scoped to one
+package (a backend-only library choice, a frontend-only rendering strategy) goes in that
+package's `docs/adr/` (`backend/docs/adr/` or `frontend/docs/adr/`). Say which you picked
+and why.
+
 ### 1. Number it
 
-List `docs/adr/`, take the highest existing number, add one. Three-digit padded:
-`ADR-001`, `ADR-014`. Never reuse a number, even for an abandoned draft.
+List the chosen `docs/adr/`, take the highest existing number **in that directory**, add
+one. Three-digit padded: `ADR-001`, `ADR-014`. Numbering is independent per directory —
+never reuse a number within the same directory, even for an abandoned draft.
 
-Filename: `docs/adr/ADR-NNN-<kebab-slug>.md`.
+Filename: `docs/adr/ADR-NNN-<kebab-slug>.md` (under whichever directory step 0 picked).
 
 The slug names **the decision**, not the ticket or the change:
 `ADR-014-immediate-cutoff-on-program-deactivation.md`, not `ADR-014-abet-1234.md`.
@@ -84,8 +93,9 @@ actively agreed to.
 ### 4. Link it
 
 - From `openspec/changes/<slug>/design.md`, in the ADR gate section.
-- From `docs/CONTEXT.md` or `AGENTS.md` if the ADR must be read before touching a
-  particular area. An ADR nobody is pointed at is an ADR nobody reads.
+- From the relevant `docs/CONTEXT.md` or `AGENTS.md` (root or package-level, matching
+  where the ADR lives) if it must be read before touching a particular area. An ADR
+  nobody is pointed at is an ADR nobody reads.
 
 ### 5. Report and stop
 

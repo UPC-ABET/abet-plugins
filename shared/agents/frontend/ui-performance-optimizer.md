@@ -73,7 +73,7 @@ where it appeared while the first one masked it.
 - Hosting, container resources, autoscaling
 - Backend query performance. If the baseline shows a single endpoint taking most of the
   wall time, **stop and say so** — that is `api-performance-optimizer`'s job in the
-  backend repo, and no amount of frontend work will fix it.
+  `backend/` package, and no amount of frontend work will fix it.
 
 ## 5. Report
 

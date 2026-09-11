@@ -10,7 +10,7 @@
     {
       "name": "abet-common",
       "source": "./claude/plugins/abet-common",
-      "description": "Mandatory base for every ABET repo: the delivery pipeline skills, git-policy hooks, and the openspec/ + docs/ conventions.",
+      "description": "Mandatory base for ACC-SYS: the delivery pipeline skills, git-policy hooks, and the openspec/ + docs/ conventions. Install alongside abet-backend and abet-frontend.",
       "category": "workflow",
       "tags": ["openspec", "pipeline", "git-policy", "abet"]
     },

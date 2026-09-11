@@ -8,19 +8,22 @@
  * (synthetic payload in, verdict out) and the git-hook CLI that husky calls, so a rule
  * cannot pass on one provider and fail on another.
  *
- * The pre-commit gate is exercised through its parsing seams only (secrets, shell) —
- * the checks themselves need a real staged git tree, which lives in a separate manual test.
+ * Most of the pre-commit gate is exercised through its parsing seams only (secrets, shell).
+ * `runPreCommitChecks` itself — including per-package toolchain resolution in a workspace
+ * repo — is exercised against real `git init` fixtures with stub tool binaries further down.
  */
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
+import { writeFileSync, mkdirSync, mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { gitInvocations, tokenize, splitSegments, gitCommandCwd } from '../lib/shell.mjs';
 import { scanDiff } from '../lib/secrets.mjs';
 import { slugFromBranch } from '../lib/branches.mjs';
 import { isAuthored, isScannable as isScannablePath } from '../lib/paths.mjs';
 import { validateCommitMessage } from '../checks/commit-message.mjs';
+import { runPreCommitChecks } from '../checks/pre-commit.mjs';
+import { findWorkspacePackages, packageFor } from '../lib/workspace.mjs';
 
 const HOOKS = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -306,6 +309,303 @@ check('cli pre-push: multiple refs, one protected',
 check('cli: unknown command', cli(['nonsense']), 'allow'); // exit 2, not a block
 
 rmSync(tmp, { recursive: true, force: true });
+
+// ------------------------------------------------------ workspace package resolution
+console.log('workspace package resolution');
+
+{
+  const dir = mkdtempSync(join(tmpdir(), 'abet-ws-unit-'));
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'root', private: true }));
+  writeFileSync(join(dir, 'pnpm-workspace.yaml'), "packages:\n  - 'backend'\n  - 'frontend'\n");
+  mkdirSync(join(dir, 'backend'), { recursive: true });
+  writeFileSync(join(dir, 'backend', 'package.json'), '{}');
+  mkdirSync(join(dir, 'frontend'), { recursive: true });
+  writeFileSync(join(dir, 'frontend', 'package.json'), '{}');
+  mkdirSync(join(dir, 'not-a-package'), { recursive: true }); // no package.json — must be excluded
+
+  const pkgs = findWorkspacePackages(dir);
+  const labels = pkgs.map((p) => relative(dir, p).replace(/\\/g, '/')).sort();
+  check('findWorkspacePackages: finds backend+frontend', JSON.stringify(labels), JSON.stringify(['backend', 'frontend']));
+
+  check('packageFor: backend file', relative(dir, packageFor(dir, pkgs, 'backend/src/a.ts')).replace(/\\/g, '/'), 'backend');
+  check('packageFor: frontend file', relative(dir, packageFor(dir, pkgs, 'frontend/x.ts')).replace(/\\/g, '/'), 'frontend');
+  check('packageFor: unmatched path falls back to root', packageFor(dir, pkgs, 'docker/x.yml'), dir);
+
+  rmSync(dir, { recursive: true, force: true });
+}
+
+{
+  // no pnpm-workspace.yaml, no `workspaces` field — single-package repos keep working
+  const dir = mkdtempSync(join(tmpdir(), 'abet-ws-unit-single-'));
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'solo' }));
+  const pkgs = findWorkspacePackages(dir);
+  check('findWorkspacePackages: single-package fallback is [root]', JSON.stringify(pkgs), JSON.stringify([dir]));
+  check('packageFor: single-package repo always resolves to root', packageFor(dir, pkgs, 'src/a.ts'), dir);
+  rmSync(dir, { recursive: true, force: true });
+}
+
+{
+  // npm/yarn `workspaces` array, honoured as a fallback when there's no pnpm-workspace.yaml
+  const dir = mkdtempSync(join(tmpdir(), 'abet-ws-unit-npmws-'));
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'root', workspaces: ['packages/*'] }));
+  mkdirSync(join(dir, 'packages', 'a'), { recursive: true });
+  writeFileSync(join(dir, 'packages', 'a', 'package.json'), '{}');
+  mkdirSync(join(dir, 'packages', 'b'), { recursive: true });
+  writeFileSync(join(dir, 'packages', 'b', 'package.json'), '{}');
+  const pkgs = findWorkspacePackages(dir);
+  const labels = pkgs.map((p) => relative(dir, p).replace(/\\/g, '/')).sort();
+  check('findWorkspacePackages: npm workspaces array glob', JSON.stringify(labels), JSON.stringify(['packages/a', 'packages/b']));
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// ------------------------------------------------------- pre-commit gate (real fixtures)
+console.log('pre-commit gate (real git fixtures)');
+
+function gitRepo(prefix) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  spawnSync('git', ['init', '-q'], { cwd: dir });
+  spawnSync('git', ['config', 'user.email', 'abet-test@example.com'], { cwd: dir });
+  spawnSync('git', ['config', 'user.name', 'ABET Test'], { cwd: dir });
+  return dir;
+}
+
+function stage(dir, relPath, content = 'export const x = 1;\n') {
+  const abs = join(dir, relPath);
+  mkdirSync(dirname(abs), { recursive: true });
+  writeFileSync(abs, content);
+  spawnSync('git', ['add', '--', relPath], { cwd: dir });
+}
+
+/** Mirrors lib/toolchain.mjs's ENTRIES — the paths a stub tool must live at to be found. */
+const TOOL_ENTRY = {
+  eslint: 'node_modules/eslint/bin/eslint.js',
+  prettier: 'node_modules/prettier/bin/prettier.cjs',
+  tsc: 'node_modules/typescript/bin/tsc',
+  jest: 'node_modules/jest/bin/jest.js',
+};
+
+/**
+ * A stub tool that records its own cwd+argv (as one JSON line) and exits with `exitCode`.
+ * On a nonzero exit it also prints a line — `runPreCommitChecks` treats empty stdout as
+ * "nothing to report" (real eslint does the same), so a silent failing stub would never block.
+ */
+function writeStubTool(pkgDir, tool, recordFile, exitCode = 0) {
+  const entry = join(pkgDir, TOOL_ENTRY[tool]);
+  mkdirSync(dirname(entry), { recursive: true });
+  const body = [
+    "const fs = require('node:fs');",
+    "const path = require('node:path');",
+    `const RECORD = ${JSON.stringify(recordFile)};`,
+    'fs.mkdirSync(path.dirname(RECORD), { recursive: true });',
+    "fs.appendFileSync(RECORD, JSON.stringify({ cwd: process.cwd(), argv: process.argv.slice(2) }) + '\\n');",
+    `if (${exitCode} !== 0) console.log('stub ${tool} failure');`,
+    `process.exit(${exitCode});`,
+    '',
+  ].join('\n');
+  writeFileSync(entry, body);
+}
+
+function readRecords(recordFile) {
+  if (!existsSync(recordFile)) return [];
+  return readFileSync(recordFile, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+}
+
+// --- (a) single-package repo: unchanged behaviour --------------------------------
+{
+  const dir = gitRepo('abet-pc-single-');
+  const records = mkdtempSync(join(tmpdir(), 'abet-pc-single-rec-'));
+  const record = (tool) => join(records, `${tool}.ndjson`);
+
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({
+    name: 'single-pkg', private: true,
+    scripts: { 'format:fix': 'prettier --write .', 'lint:fix': 'eslint --fix .' },
+  }));
+  writeFileSync(join(dir, 'tsconfig.json'), '{}');
+  for (const tool of ['eslint', 'prettier', 'tsc', 'jest']) writeStubTool(dir, tool, record(tool), 0);
+  stage(dir, 'src/a.ts');
+
+  const result = runPreCommitChecks(dir, {});
+  check('single-package: all-green stubs pass', result.ok, true);
+  check('single-package: prettier invoked with repo root as cwd', readRecords(record('prettier'))[0]?.cwd, dir);
+  check('single-package: eslint sees the staged file', readRecords(record('eslint'))[0]?.argv.includes('src/a.ts'), true);
+  check('single-package: jest sees the staged file', readRecords(record('jest'))[0]?.argv.includes('src/a.ts'), true);
+  check('single-package: tsc runs against tsconfig.json', readRecords(record('tsc'))[0]?.argv.includes('tsconfig.json'), true);
+
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(records, { recursive: true, force: true });
+}
+
+// --- (a2) single-package repo: a failing tool still blocks, with a root-style hint -
+{
+  const dir = gitRepo('abet-pc-single-fail-');
+  const records = mkdtempSync(join(tmpdir(), 'abet-pc-single-fail-rec-'));
+  const record = (tool) => join(records, `${tool}.ndjson`);
+
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({
+    name: 'single-pkg', private: true,
+    scripts: { 'lint:fix': 'eslint --fix .' },
+  }));
+  writeFileSync(join(dir, 'tsconfig.json'), '{}');
+  writeStubTool(dir, 'prettier', record('prettier'), 0);
+  writeStubTool(dir, 'eslint', record('eslint'), 1); // fails
+  writeStubTool(dir, 'tsc', record('tsc'), 0);
+  writeStubTool(dir, 'jest', record('jest'), 0);
+  stage(dir, 'src/a.ts');
+
+  const result = runPreCommitChecks(dir, {});
+  check('single-package: failing eslint blocks the commit', result.ok, false);
+  check('single-package: block message is labelled root', result.message.startsWith('root:'), true);
+  check('single-package: fixHint uses plain `pnpm run`', result.message.includes('pnpm run lint:fix'), true);
+
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(records, { recursive: true, force: true });
+}
+
+// --- (b) workspace repo: backend + frontend, each with its own toolchain -----------
+function buildWorkspaceRepo(prefix) {
+  const dir = gitRepo(prefix);
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'monorepo-root', private: true }));
+  writeFileSync(join(dir, 'pnpm-workspace.yaml'), "packages:\n  - 'backend'\n  - 'frontend'\n");
+  for (const name of ['backend', 'frontend']) {
+    mkdirSync(join(dir, name), { recursive: true });
+    writeFileSync(join(dir, name, 'package.json'), JSON.stringify({
+      name,
+      scripts: { 'format:fix': 'prettier --write .', 'lint:fix': 'eslint --fix .' },
+    }));
+    writeFileSync(join(dir, name, 'tsconfig.json'), '{}');
+  }
+  return dir;
+}
+
+// (b1) a backend-only commit touches only backend's toolchain, with backend as cwd
+{
+  const dir = buildWorkspaceRepo('abet-pc-ws-be-');
+  const records = mkdtempSync(join(tmpdir(), 'abet-pc-ws-be-rec-'));
+  const beRecord = (tool) => join(records, `backend-${tool}.ndjson`);
+  const feRecord = (tool) => join(records, `frontend-${tool}.ndjson`);
+  for (const tool of ['eslint', 'prettier', 'tsc', 'jest']) {
+    writeStubTool(join(dir, 'backend'), tool, beRecord(tool), 0);
+    writeStubTool(join(dir, 'frontend'), tool, feRecord(tool), 0);
+  }
+  stage(dir, 'backend/src/a.ts');
+
+  const result = runPreCommitChecks(dir, {});
+  check('workspace: backend-only commit passes', result.ok, true);
+  check('workspace: backend eslint cwd is backend/', readRecords(beRecord('eslint'))[0]?.cwd, join(dir, 'backend'));
+  check('workspace: backend eslint sees a package-relative path', readRecords(beRecord('eslint'))[0]?.argv.includes('src/a.ts'), true);
+  check('workspace: backend prettier invoked', readRecords(beRecord('prettier')).length, 1);
+  check('workspace: backend jest invoked', readRecords(beRecord('jest')).length, 1);
+  check('workspace: backend tsc invoked', readRecords(beRecord('tsc')).length, 1);
+  check('workspace: frontend eslint NOT invoked', readRecords(feRecord('eslint')).length, 0);
+  check('workspace: frontend prettier NOT invoked', readRecords(feRecord('prettier')).length, 0);
+  check('workspace: frontend tsc NOT invoked', readRecords(feRecord('tsc')).length, 0);
+  check('workspace: frontend jest NOT invoked', readRecords(feRecord('jest')).length, 0);
+
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(records, { recursive: true, force: true });
+}
+
+// (b2) a frontend-only commit is the mirror image
+{
+  const dir = buildWorkspaceRepo('abet-pc-ws-fe-');
+  const records = mkdtempSync(join(tmpdir(), 'abet-pc-ws-fe-rec-'));
+  const beRecord = (tool) => join(records, `backend-${tool}.ndjson`);
+  const feRecord = (tool) => join(records, `frontend-${tool}.ndjson`);
+  for (const tool of ['eslint', 'prettier', 'tsc', 'jest']) {
+    writeStubTool(join(dir, 'backend'), tool, beRecord(tool), 0);
+    writeStubTool(join(dir, 'frontend'), tool, feRecord(tool), 0);
+  }
+  stage(dir, 'frontend/src/b.tsx');
+
+  const result = runPreCommitChecks(dir, {});
+  check('workspace: frontend-only commit passes', result.ok, true);
+  check('workspace: frontend eslint cwd is frontend/', readRecords(feRecord('eslint'))[0]?.cwd, join(dir, 'frontend'));
+  check('workspace: frontend eslint sees a package-relative path', readRecords(feRecord('eslint'))[0]?.argv.includes('src/b.tsx'), true);
+  check('workspace: backend eslint NOT invoked', readRecords(beRecord('eslint')).length, 0);
+  check('workspace: backend jest NOT invoked', readRecords(beRecord('jest')).length, 0);
+
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(records, { recursive: true, force: true });
+}
+
+// (b3) root-level files never run eslint/tsc/jest once the repo is a real workspace —
+// even when tooling happens to be hoisted to the root node_modules — only prettier.
+{
+  const dir = buildWorkspaceRepo('abet-pc-ws-root-');
+  const records = mkdtempSync(join(tmpdir(), 'abet-pc-ws-root-rec-'));
+  const rootRecord = (tool) => join(records, `root-${tool}.ndjson`);
+  for (const tool of ['eslint', 'prettier', 'tsc', 'jest']) writeStubTool(dir, tool, rootRecord(tool), 0);
+  stage(dir, 'scripts/build.mjs');
+
+  const result = runPreCommitChecks(dir, {});
+  check('workspace: root-level commit passes', result.ok, true);
+  check('workspace: root prettier IS invoked', readRecords(rootRecord('prettier')).length, 1);
+  check('workspace: root eslint is NOT invoked, workspace exists', readRecords(rootRecord('eslint')).length, 0);
+  check('workspace: root tsc is NOT invoked, workspace exists', readRecords(rootRecord('tsc')).length, 0);
+  check('workspace: root jest is NOT invoked, workspace exists', readRecords(rootRecord('jest')).length, 0);
+
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(records, { recursive: true, force: true });
+}
+
+// (b3b) root-level commit notes when root has no prettier at all
+{
+  const dir = buildWorkspaceRepo('abet-pc-ws-root-note-');
+  stage(dir, 'docker/x.yml', 'image: postgres\n');
+
+  const result = runPreCommitChecks(dir, {});
+  check('workspace: root note when prettier missing — still passes', result.ok, true);
+  check('workspace: root note mentions prettier not installed',
+    result.notes.some((n) => n === 'root: prettier not installed — format check skipped'), true);
+
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// (b4) backend/openapi.json stays exempt from every tool, per the shared generated-path filter
+{
+  const dir = buildWorkspaceRepo('abet-pc-ws-openapi-');
+  const records = mkdtempSync(join(tmpdir(), 'abet-pc-ws-openapi-rec-'));
+  const beRecord = (tool) => join(records, `backend-${tool}.ndjson`);
+  for (const tool of ['eslint', 'prettier', 'tsc', 'jest']) writeStubTool(join(dir, 'backend'), tool, beRecord(tool), 0);
+  stage(dir, 'backend/openapi.json', '{"openapi":"3.0.0"}\n');
+
+  const result = runPreCommitChecks(dir, {});
+  check('workspace: openapi.json commit passes', result.ok, true);
+  check('workspace: openapi.json never reaches prettier', readRecords(beRecord('prettier')).length, 0);
+  check('workspace: openapi.json never reaches eslint', readRecords(beRecord('eslint')).length, 0);
+
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(records, { recursive: true, force: true });
+}
+
+// (b5) touching both packages runs both, and either one failing blocks the commit,
+// with a package-scoped `pnpm --filter` fix hint
+{
+  const dir = buildWorkspaceRepo('abet-pc-ws-both-');
+  const records = mkdtempSync(join(tmpdir(), 'abet-pc-ws-both-rec-'));
+  const beRecord = (tool) => join(records, `backend-${tool}.ndjson`);
+  const feRecord = (tool) => join(records, `frontend-${tool}.ndjson`);
+  for (const tool of ['prettier', 'tsc', 'jest']) {
+    writeStubTool(join(dir, 'backend'), tool, beRecord(tool), 0);
+    writeStubTool(join(dir, 'frontend'), tool, feRecord(tool), 0);
+  }
+  writeStubTool(join(dir, 'backend'), 'eslint', beRecord('eslint'), 1); // backend fails lint
+  writeStubTool(join(dir, 'frontend'), 'eslint', feRecord('eslint'), 0); // frontend is clean
+
+  stage(dir, 'backend/src/a.ts');
+  stage(dir, 'frontend/src/b.tsx');
+
+  const result = runPreCommitChecks(dir, {});
+  check('workspace: commit touching both packages blocks when one fails', result.ok, false);
+  check('workspace: block message is labelled backend', result.message.startsWith('backend:'), true);
+  check('workspace: fixHint uses pnpm --filter for the package', result.message.includes('pnpm --filter ./backend run lint:fix'), true);
+  check('workspace: backend eslint was invoked', readRecords(beRecord('eslint')).length, 1);
+  check('workspace: frontend eslint was ALSO invoked before blocking', readRecords(feRecord('eslint')).length, 1);
+  check('workspace: typecheck phase never ran — lint already blocked', readRecords(beRecord('tsc')).length, 0);
+
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(records, { recursive: true, force: true });
+}
 
 // ----------------------------------------------------------------- report
 console.log('');

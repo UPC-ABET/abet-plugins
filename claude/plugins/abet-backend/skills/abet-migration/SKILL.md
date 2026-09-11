@@ -1,6 +1,6 @@
 ---
 name: abet-migration
-description: Create, review and run a TypeORM migration safely against a production database. Enforces CLI-generated timestamps, forward-only changes, a working down(), and explicit constraint naming. Use whenever a change touches the database schema in the backend repository.
+description: Create, review and run a TypeORM migration safely against a production database. Enforces CLI-generated timestamps, forward-only changes, a working down(), and explicit constraint naming. Use whenever a change touches the database schema in the backend package.
 ---
 
 # Write a migration
@@ -9,12 +9,15 @@ The database is **in production**. That single fact drives every rule here: a mi
 that has already run cannot be changed, and a migration that sorts into the wrong place
 breaks every fresh environment.
 
-This repo has two datasources. Know which one you are targeting before you start:
+The backend has two datasources. Know which one you are targeting before you start:
 
 | Datasource | Config | Scripts |
 | ---------- | ------ | ------- |
-| Main | `src/database/typeorm.config.ts` | `migration:create` / `:run` / `:revert` / `:generate` |
-| Raw | `src/database/typeorm.raw.config.ts` | `migration:raw:create` / `:raw:run` / `:raw:revert` / `:raw:generate` |
+| Main | `backend/src/database/typeorm.config.ts` | `migration:create` / `:run` / `:revert` / `:generate` |
+| Raw | `backend/src/database/typeorm.raw.config.ts` | `migration:raw:create` / `:raw:run` / `:raw:revert` / `:raw:generate` |
+
+Run every script below as `pnpm --filter ./backend <script>` from the repo root, or plain
+`pnpm <script>` from inside `backend/`.
 
 The raw datasource holds scraped Banner / uPlanner data. If your change is about
 application entities, it is the main one.
@@ -24,7 +27,7 @@ application entities, it is the main one.
 ### 1. Create the file with the CLI. Always.
 
 ```bash
-pnpm migration:create src/database/migrations/<kebab-case-name>
+pnpm --filter ./backend migration:create src/database/migrations/<kebab-case-name>
 ```
 
 This stamps the filename with `Date.now()`, which guarantees it sorts **after** every
@@ -35,8 +38,8 @@ hand-picked timestamp drifts out of order and can run before its dependencies �
 created before its schema exists — which breaks a fresh database while looking fine on
 yours, because yours already ran the earlier ones.
 
-`pnpm migration:generate` also stamps correctly, but prefer hand-written `up()`/`down()`
-per the next rule.
+`pnpm --filter ./backend migration:generate` also stamps correctly, but prefer
+hand-written `up()`/`down()` per the next rule.
 
 ### 2. Write up() and down() by hand
 
@@ -89,22 +92,22 @@ Before running anything against a real environment, answer:
 ### 6. Test it both ways
 
 ```bash
-pnpm migration:run
-pnpm migration:revert
-pnpm migration:run
+pnpm --filter ./backend migration:run
+pnpm --filter ./backend migration:revert
+pnpm --filter ./backend migration:run
 ```
 
 Up, down, up. If `down()` fails or leaves a different schema than you started with, it is
 wrong — and you will only find out at the worst possible moment.
 
-Then run the suite: `pnpm test`.
+Then run the suite: `pnpm --filter ./backend test`.
 
 ### 7. Record it in the runbook
 
 Every migration puts its deploy step in `openspec/changes/<slug>/runbook.md`, under the
 deploy prerequisite section, with the exact command and its ordering relative to the
-deploy. If a seed must run after it (`pnpm seed:auth-roles-permissions` after a permission
-change, for instance), that goes there too.
+deploy. If a seed must run after it (`pnpm --filter ./backend seed:auth-roles-permissions`
+after a permission change, for instance), that goes there too.
 
 A migration that only exists in the diff and not in the runbook is a migration someone
 will forget to run.

@@ -2,16 +2,16 @@
 
 **Slug**: `<slug>` · **Agreed**: YYYY-MM-DD · **Backend**: <who> · **Frontend**: <who>
 
-Created only for a **parallel** change — one where the frontend cannot wait for the
-backend to land. For sequential work, delete this file and use the backend's committed
-`openapi.json` instead.
+Optional. Write this only for a **parallel** change — two people, or the frontend starts
+before the backend code exists. For sequential work (the default), skip this file and
+code the frontend against `backend/openapi.json` on disk at HEAD instead.
 
-This file is copied **identically** into both repositories. Neither side deviates from it
-without updating both copies and saying so here.
+One copy, in this change's folder. There is nothing to keep in sync across repositories —
+backend and frontend are packages in the same working tree.
 
 > **This is a design-time agreement, not a record.** Once the backend is implemented, its
-> generated `openapi.json` is the source of truth. If the two disagree, the spec wins and
-> this file gets a dated correction below.
+> generated `backend/openapi.json` is the source of truth. If the two disagree, the spec
+> wins and this file gets a dated correction below.
 
 ## Endpoints
 

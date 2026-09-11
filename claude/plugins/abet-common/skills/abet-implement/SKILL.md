@@ -13,10 +13,11 @@ stays honest.
 
 1. Resolve `<slug>` from the branch (see `reference/conventions.md`).
 2. `openspec/changes/<slug>/` exists and contains at least one `tasks*.md`.
-3. Read `tasks.md`. On a cross-repo change it holds **only this repo's own tasks** — the
-   other side's live in that repo's copy of the change folder. Read `proposal.md` for the
-   shared story, and `contract.md` (or the backend's committed `openapi.json`) for the
-   API surface you are coding against.
+3. Read `tasks.md`. On a change affecting both packages it holds `## Backend` and
+   `## Frontend` H2 sections in the same file — work only the section(s) relevant to what
+   you are implementing right now. Read `proposal.md` for the shared story, and
+   `contract.md` (or `backend/openapi.json` on disk) for the API surface you are coding
+   against.
 4. Count open tasks: `grep -c '^- \[ \]' openspec/changes/<slug>/tasks*.md`.
    - **Zero open, zero done** → the file was written with headings but no checkboxes.
      Stop and fix the task file first; you cannot track progress against it and neither
@@ -28,10 +29,13 @@ stays honest.
 
 ### 1. Load the rules that govern the code
 
-Read `docs/POLICIES.md` in full and the relevant parts of `docs/CONTEXT.md`, plus any
-ADR the design's **Read first** list points at. If the active repo profile ships a stack
-rules file (`abet-backend/rules/backend.md`), read that too. These are the constraints
-your code will be audited against; reading them after the audit is too late.
+Read root `docs/POLICIES.md` in full and the relevant parts of `docs/CONTEXT.md`, plus any
+ADR the design's **Read first** list points at. Then do the same for
+`backend/docs/{POLICIES,CONTEXT}.md` and/or `frontend/docs/{POLICIES,CONTEXT}.md`,
+whichever package(s) the tasks you are executing touch. If the active profile ships a
+stack rules file (`abet-backend/rules/backend.md`, `abet-frontend/rules/frontend.md`),
+read that too. These are the constraints your code will be audited against; reading them
+after the audit is too late.
 
 ### 2. Batch the work
 
@@ -112,8 +116,8 @@ The design's **Docs to update in this PR** list is a task, not a suggestion. Upd
 integration, or the architecture.
 
 **If the change touched an API surface**, regenerate the committed spec in the same batch
-that changed it — `pnpm openapi:export` on the backend. The spec is the frontend's source
-of truth; one that lags the endpoints is worse than none, because it is trusted.
+that changed it — `pnpm --filter ./backend openapi:export`. The spec is the frontend's
+source of truth; one that lags the endpoints is worse than none, because it is trusted.
 
 Three prohibitions:
 

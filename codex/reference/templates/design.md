@@ -23,7 +23,7 @@ reviewable rather than invisible.
 | Datastore, broker or cache choice              | No   |
 | Auth or payments provider                      | No   |
 | Public API contract change or breaking change  | No   |
-| New module boundary or cross-repo split        | No   |
+| New module boundary or cross-package split     | No   |
 | Language, runtime or framework                 | No   |
 | Contradicting an existing ADR                  | No   |
 
@@ -48,7 +48,7 @@ explains how AC-3 is met.
 
 ## Backend
 
-- **Module**: `src/modules/<area>/<module>/`
+- **Module**: `backend/src/modules/<area>/<module>/`
 - **Entities / migrations**: what changes, and whether a migration is generated or hand-written
 - **Endpoints**: method, route, DTOs, response shape
 - **Guards / scope**: which guard, which scope headers apply
@@ -60,19 +60,21 @@ explains how AC-3 is met.
 - **Routes / screens**: ...
 - **Components**: ...
 - **Data**: query keys, cache invalidation, and every scope variable the key must include
-- **Types**: how they stay in sync with the backend contract
+- **Types**: how they stay in sync with `backend/openapi.json`
 
-<!-- Keep only the section for this repo's own side. design.md is not mirrored across
-     repositories — proposal.md and contract.md are the shared copies. -->
+<!-- Keep both H2 sections when "Packages affected: both" in proposal.md — design.md is
+     one file per change, not mirrored per package. Delete whichever section does not
+     apply for a single-package change. -->
 
-## Cross-repo mode
+## Cross-package mode
 
-Delete this section for a single-repo change.
+Delete this section for a change touching only one package.
 
-- **Mode**: sequential | parallel — and why.
-- **Contract**: `./contract.md` (parallel), or the backend's committed `openapi.json`
-  (sequential).
-- **Ordering**: the backend PR merges and reaches `staging` before the frontend PR merges.
+- **Mode**: sequential (default) | parallel — and why.
+- **Contract**: `./contract.md` (parallel only), or `backend/openapi.json` on disk at HEAD
+  (sequential — the default).
+- **Ordering**: if split into two PRs, the backend PR merges into `develop` first. No
+  requirement to reach `staging` first — `staging` is a deployed environment, not a gate.
 
 ## Testing strategy
 

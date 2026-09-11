@@ -22,6 +22,10 @@ One paragraph. What this change delivers.
 Vertical. Each milestone delivers something demonstrable — schema, endpoint, tests and
 docs together — rather than a horizontal layer.
 
+<!-- When proposal.md says "Packages affected: both", split the milestones below under
+     ## Backend and ## Frontend H2 headings in this same file, instead of two files. The
+     completeness gate still counts every `- [ ]` in the file regardless of section. -->
+
 ---
 
 ## Milestone 1 — <what it delivers>
@@ -31,14 +35,14 @@ docs together — rather than a horizontal layer.
 - [ ] Task complete
 
 **Files**
-- `src/modules/<...>/<file>.ts` (modify)
-- `src/modules/<...>/<file>.spec.ts` (test)
+- `backend/src/modules/<...>/<file>.ts` (modify)
+- `backend/src/modules/<...>/<file>.spec.ts` (test)
 
 **Steps (TDD)**
-1. Write the failing case in `<file>.spec.ts`: `pnpm test -- <pattern>` → expect **red**.
+1. Write the failing case in `<file>.spec.ts`: `pnpm --filter ./backend test -- <pattern>` → expect **red**.
 2. Implement `<what>` in `<file>.ts`.
-3. Re-run `pnpm test -- <pattern>` → expect **green**.
-4. `pnpm exec tsc --noEmit -p tsconfig.build.json`.
+3. Re-run `pnpm --filter ./backend test -- <pattern>` → expect **green**.
+4. `pnpm --filter ./backend exec tsc --noEmit -p tsconfig.build.json`.
 
 **Commit**: `feat(<scope>): <subject>`
 

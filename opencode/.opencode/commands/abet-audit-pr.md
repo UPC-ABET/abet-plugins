@@ -28,10 +28,14 @@ Do this yourself before dispatching anyone. Everything below feeds the auditors.
    Open tasks remaining is a **blocker** — the change is not finished.
    Zero open **and** zero `- [x]` means the file has no checkboxes at all: report that
    as a blocker too, because the gate cannot see anything and neither can you.
-5. **Build PROJECT_RULES**: concatenate `docs/POLICIES.md`, the relevant sections of
-   `docs/CONTEXT.md`, any `docs/adr/*` the change touches, `AGENTS.md` if it holds
-   content, and the repo profile's stack rules file. Every auditor gets this verbatim.
-6. **Detect the stack** from the changed paths so auditors skip what does not apply.
+5. **Classify by package**: split the changed paths on `backend/` / `frontend/` prefix to
+   know which package(s) this PR touches.
+6. **Build PROJECT_RULES**: concatenate root `docs/POLICIES.md`, the relevant sections of
+   root `docs/CONTEXT.md`, any root `docs/adr/*` the change touches, root `AGENTS.md` if it
+   holds content, then the same four (`POLICIES.md`, `CONTEXT.md`, `adr/*`, `AGENTS.md`)
+   under `backend/docs/` and/or `frontend/docs/` for each package classified in step 5, and
+   that profile's stack rules file. Every auditor gets this verbatim.
+7. **Detect the stack** from the changed paths so auditors skip what does not apply.
 
 ## Phase 1 — six auditors, dispatched in parallel
 
@@ -65,22 +69,22 @@ Then **documentation currency**, which is this auditor's most valuable job:
   extension.
 - Was a decision made here that trips the ADR gate and has no ADR?
 
-**API contract currency**, when the diff touches routes, DTOs or response shapes:
+**API contract currency** — a same-tree check, since both packages live in this repo, when
+the diff touches routes, DTOs or response shapes:
 
-- **Backend**: was `openapi.json` regenerated and committed in this PR? A route, DTO or
-  response change with an unchanged spec is a **blocker** — the frontend reads that file
-  and will be wrong.
-- Read the `openapi.json` diff as a contract change, not as noise. A renamed or retyped
-  field is a breaking change even when nothing in this repo fails to compile. Say so, and
-  say whether the frontend consumes it.
+- **Backend**: was `backend/openapi.json` regenerated and committed in this PR? A route,
+  DTO or response change with an unchanged spec is a **blocker** — the frontend reads that
+  file directly and will be wrong.
+- Read the `backend/openapi.json` diff as a contract change, not as noise. A renamed or
+  retyped field is a breaking change even when nothing in `backend/` fails to compile. Say
+  so, and say whether the frontend consumes it.
 - If a `contract.md` exists, does the implemented spec still match it? **The spec wins** —
   flag the contract for a dated correction rather than "fixing" the code to match a
   design-time guess.
-- **Frontend**: do the hand-written types in `types/` still match the backend's published
-  spec? A field the backend renamed will compile fine here and fail at runtime; that is
-  precisely the drift this check exists to catch. Fetch the spec **remotely** — via
-  `/abet-verify-contract` — never from a local checkout of the other repository, which
-  may be on any branch and prove nothing.
+- **Frontend**: do the hand-written types in `types/` still match `backend/openapi.json`
+  at HEAD? A field the backend renamed will compile fine here and fail at runtime; that is
+  precisely the drift this check exists to catch. Run `/abet-verify-contract` — a local
+  check against the spec on disk, not a network fetch.
 
 ### Auditor C — testing
 Do the new tests actually assert the acceptance criteria, or do they assert that the
