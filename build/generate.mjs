@@ -45,11 +45,20 @@ function stampManifestVersions() {
     if (manifest.version === VERSION) continue;
     // Keep `version` in its documented position rather than appended at the end.
     const ordered = {};
+    let stamped = false;
     for (const [k, v] of Object.entries(manifest)) {
+      if (k === 'version') {
+        ordered.version = VERSION;
+        stamped = true;
+        continue;
+      }
       ordered[k] = v;
-      if (k === 'displayName') ordered.version = VERSION;
+      if (!stamped && k === 'displayName') {
+        ordered.version = VERSION;
+        stamped = true;
+      }
     }
-    if (!ordered.version) ordered.version = VERSION;
+    if (!stamped) ordered.version = VERSION;
     emit(file, `${JSON.stringify(ordered, null, 2)}\n`);
   }
 }
@@ -130,12 +139,24 @@ function loadAgents(group) {
   });
 }
 
-function sharedSupportFiles(profileKey) {
+/**
+ * `includeTemplatesAndReference` defaults to true for codex/opencode, which have no
+ * per-plugin split and need templates + conventions in their single flat reference/ tree
+ * regardless of which profile's rules file is being copied alongside them. For Claude
+ * Code, buildClaude() passes false for the backend/frontend profiles: no skill or agent
+ * under shared/skills/{backend,frontend} or shared/agents/{backend,frontend} references
+ * `${CLAUDE_PLUGIN_ROOT}/templates` or `/reference` (verified by grep), and abet-common —
+ * which does ship both — is always installed alongside the stack profiles in this
+ * monorepo. Copying them three times over was pure duplication.
+ */
+function sharedSupportFiles(profileKey, { includeTemplatesAndReference = true } = {}) {
   const out = [];
-  for (const t of listFiles(join(SHARED, 'templates'))) {
-    out.push({ src: join(SHARED, 'templates', t), rel: join('templates', t) });
+  if (includeTemplatesAndReference) {
+    for (const t of listFiles(join(SHARED, 'templates'))) {
+      out.push({ src: join(SHARED, 'templates', t), rel: join('templates', t) });
+    }
+    out.push({ src: join(SHARED, 'reference', 'conventions.md'), rel: join('reference', 'conventions.md') });
   }
-  out.push({ src: join(SHARED, 'reference', 'conventions.md'), rel: join('reference', 'conventions.md') });
   const rules = PROFILES[profileKey].rules;
   if (rules) out.push({ src: join(SHARED, 'rules', rules), rel: join('rules', rules) });
   return out;
@@ -158,7 +179,9 @@ function buildClaude() {
         renderFrontmatter({ name: agent.name, description: agent.description, model: agent.model }) + agent.body);
     }
 
-    for (const f of sharedSupportFiles(key)) emitCopy(f.src, join(dest, f.rel));
+    for (const f of sharedSupportFiles(key, { includeTemplatesAndReference: key === 'common' })) {
+      emitCopy(f.src, join(dest, f.rel));
+    }
   }
 
   // Hook logic is shared; hooks.json (the wiring) is hand-maintained under claude/.
