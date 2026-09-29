@@ -1,5 +1,5 @@
 ---
-description: The bug lane — reproduce first, find the root cause systematically, write a regression test that fails before the fix, then apply the minimal fix. Use for one-shot defects. Skips design, the change folder and archiving entirely. Reroutes to /abet-design-feature if the root cause needs architecture.
+description: "The bug lane — reproduce first, find the root cause systematically, write a regression test that fails before the fix, then apply the minimal fix. Use for one-shot defects. Skips design, the change folder and archiving entirely. Reroutes to /abet-design-feature if the root cause needs architecture. Cost: medium."
 ---
 
 # Fix a bug
@@ -72,6 +72,8 @@ report`, not `fixes issue with report`.
 
 Put it where the module's other tests live, following the testing conventions in that
 package's `docs/POLICIES.md` (`backend/docs/POLICIES.md` or `frontend/docs/POLICIES.md`).
+Read that file **in full** before you write the fix, not just its testing section: the
+minimal fix still has to follow every convention in it.
 
 ### 5. Apply the minimal fix
 

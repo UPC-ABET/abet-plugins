@@ -1,6 +1,6 @@
 ---
 name: abet-define-task
-description: Turn a raw feature request into a reviewed ticket — the openspec proposal.md that stands in for Jira. Use at the very start of any new feature, before design or code. Produces the problem statement, what already exists, goals and non-goals, acceptance criteria with a traceability table, dependencies and risks.
+description: "Turn a raw feature request into a reviewed ticket — the openspec proposal.md that stands in for Jira. Use at the very start of any new feature, before design or code. Produces the problem statement, what already exists, goals and non-goals, acceptance criteria with a traceability table, dependencies and risks. Cost: light — one interactive planning pass."
 ---
 
 # Define a task
@@ -22,11 +22,14 @@ enough that someone else could implement it and someone else again could verify 
 
 Before asking the requester anything, read what the repo already tells you:
 
-- `docs/POLICIES.md` — the repo-wide mandatory rules this change must respect.
-- `docs/CONTEXT.md` — repo-wide topology: server, environments, deploy pipeline, CI.
+- `docs/POLICIES.md` — the repo-wide mandatory rules this change must respect. Read in full.
+- `backend/docs/POLICIES.md` and/or `frontend/docs/POLICIES.md` — whichever package(s) the
+  request looks like it touches. Read in full: they hold every convention the change must
+  respect, and a section you skipped is one the proposal can quietly contradict.
+- `docs/CONTEXT.md` — repo-wide topology: server, environments, deploy pipeline, CI. Small
+  enough to read. The packages' `CONTEXT.md` files are not (the backend's is ~100KB):
+  search them for the terms the request involves instead of reading them whole.
 - `docs/adr/` — index the titles; note any cross-cutting ADR that touches this area.
-- `backend/docs/{POLICIES,CONTEXT}.md` and/or `frontend/docs/{POLICIES,CONTEXT}.md` —
-  whichever package(s) the request looks like it touches.
 - `openspec/specs/` — has something like this been done before? Prior art is the
   fastest way to a good proposal, and the design will want to point back at it.
 

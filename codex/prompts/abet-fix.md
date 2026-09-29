@@ -68,6 +68,8 @@ report`, not `fixes issue with report`.
 
 Put it where the module's other tests live, following the testing conventions in that
 package's `docs/POLICIES.md` (`backend/docs/POLICIES.md` or `frontend/docs/POLICIES.md`).
+Read that file **in full** before you write the fix, not just its testing section: the
+minimal fix still has to follow every convention in it.
 
 ### 5. Apply the minimal fix
 

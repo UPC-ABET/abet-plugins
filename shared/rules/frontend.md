@@ -195,6 +195,19 @@ here. Do not add it back.
   page components. A `'use client'` at the top of a route file drags the whole tree
   client-side.
 
+### No duplicated logic — the rule of three
+Two copies of a piece of logic are tolerated. The **third** is the trigger to extract it
+into one shared hook, function or component. Before writing one, `git grep` for what
+already exists. The audit counts copies across the whole package and reports a third one
+as **major**.
+
+### No dead code
+Nothing unused is merged: no unused component, hook, function, export, prop, import,
+variable or commented-out block. If nothing in this change or already in the tree uses it,
+delete it — git keeps the history, so "for later" is not a reason. A new export whose only
+user is its own test is dead. An audit reports unused code as **major**, never as a
+suggestion.
+
 ### Silent catches are not allowed
 Every `catch` either handles the error visibly or logs via `logger.warn`. An empty catch
 is a blocker.

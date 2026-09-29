@@ -1,5 +1,5 @@
 ---
-description: Post-merge bookkeeping. Verifies the feature PR actually merged, then moves openspec/changes/<slug> to openspec/specs/<slug> with git mv on its own chore branch and opens a small chore PR, because develop is protected. Finishes with local branch cleanup.
+description: "Post-merge bookkeeping. Verifies the feature PR actually merged, then moves openspec/changes/<slug> to openspec/specs/<slug> with git mv on its own chore branch and opens a small chore PR, because develop is protected. Finishes with local branch cleanup. Cost: light."
 ---
 
 # Archive a merged change

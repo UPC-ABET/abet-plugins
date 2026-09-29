@@ -1,6 +1,6 @@
 ---
 name: abet-module
-description: Create or audit a frontend domain module against the required layout and import rules. Use when adding a new module, adding a folder to an existing one, or when a change has crossed a module boundary. Checks barrel exports, import direction, and that shared/ never imports from modules/.
+description: "Create or audit a frontend domain module against the required layout and import rules. Use when adding a new module, adding a folder to an existing one, or when a change has crossed a module boundary. Checks barrel exports, import direction, and that shared/ never imports from modules/. Cost: light."
 ---
 
 # Create or audit a module

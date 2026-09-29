@@ -233,6 +233,71 @@ receives the variable natively, so both entry points honour it.
 Precision matters: `=0` does not unlock, an unrelated variable does not unlock, and a commit
 message that merely contains the string does not unlock. All covered by the suite.
 
+### Cost: the plugin does not choose your model, it chooses how much work to do
+
+Everyone here pays for their own plan, so a $20 user and a $100 user cannot share one
+model policy. Three rules instead:
+
+- **The session model is yours.** Nothing here sets it: every skill runs on whatever `/model`
+  you picked. (A skill-level `model:` in the frontmatter does not switch models — tested —
+  so none is declared.) Only *subagent spawns* are pinned, because that does work.
+- **Depth follows risk, not your plan.** `/abet-audit-pr` and `/abet-review-pr` take `lite`
+  (one pass, no subagents) or `deep` (parallel fan-out). With neither, `auto` picks: `deep`
+  above 400 changed lines or 15 files of source code (tests, docs and the regenerated
+  `openapi.json` do not count), on both packages at once, or on a migration, auth, raw SQL,
+  deploy or dependency path; `lite` otherwise. Subagents multiply
+  tokens, so they are spent where a miss costs the most. `/abet-implement` fans out only
+  for three or more independent tasks; `serial` turns it off.
+- **Mechanical work is code.** `shared/scripts/audit-scope.mjs` counts files, lines, open
+  tasks and sensitive paths and picks the depth; a model is never asked to do arithmetic.
+  Skills declare a model *role* (`{{pin:execute}}`), and the generator maps it per
+  provider: Claude Code `sonnet` (execute) / `haiku` (procedural), Codex `terra` / `luna`,
+  opencode nothing — its model ids depend on the user's provider, so subagents there run
+  on the model the user chose.
+
+Every skill's description ends in a `Cost:` label so you can see what you are about to spend.
+
+### Module file names are checked by code
+
+Files under `backend/src/modules/` are `<name>.<kind>.ts`, and the kind fixes the folder
+(table in `rules/backend.md`). `file-name-guard` denies creating a file with an invented
+kind (`.bands.ts`, `.section-filter.ts`) the moment the model tries, and the pre-commit
+gate checks newly added files for Codex, opencode and humans. Only **new** files are
+checked, so legacy files never block a commit. `ABET_SKIP_NAMING=1` bypasses the gate.
+
+### Security and reuse: scripts are the floor, the model explores above it
+
+`audit-scope.mjs` runs deterministic checks the model would otherwise have to notice: the
+team's own rules on auth and scope (`scope-from-request`, `cache-key-without-scope`,
+`scope-param-unused`, `route-without-permission`, SQL built from values, secrets, a new
+`@Public()`…), and duplicate code counted across the repo (**rule of three**: two copies are
+tolerated, the third is a major finding that names all the copies). Blocks repeated across
+more than 12 modules are treated as a convention, not duplication.
+
+The scripts are the floor. The security auditor also reads the diff as an attacker, and
+anything it finds that no rule flagged is a **judgment** finding.
+
+### The audit ledger: turning judgment into rules
+
+Every security and reuse finding is recorded, by a script that validates it first: from
+`/abet-audit-pr` in `openspec/changes/<slug>/audit.jsonl` (or `openspec/audit-ledger/` on the
+bug lane), and from `/abet-review-pr` — someone else's branch — in its own local file,
+`openspec/audit-ledger/review-<pr>.jsonl`, which posts nothing to GitHub. Each is
+`mechanical` (a rule flagged it and the auditor confirmed it, or dropped it with a reason)
+or `judgment`, and a judgment finding carries the code shape, **how a machine could detect
+it**, and an honest `convertible` estimate.
+
+```bash
+node node_modules/abet-plugins/shared/scripts/audit-ledger.mjs report
+```
+
+prints what to do with it: judgment findings that recur across *different changes* and look
+convertible ("promote to a mechanical rule", with the detection idea attached), and how often
+each mechanical rule was right (a rule wrong half the time gets a "tighten" note). Re-running
+an audit on one branch does not count twice. This has already worked once: auditors kept
+finding an IDOR shaped `getRoster(id, schoolId) { return repo.findRoster(id) }` by reading, and
+it became the rule `scope-param-unused`.
+
 ### Hooks are Node, not shell
 
 No Git Bash, no `jq`, no PowerShell variants to keep in sync — the same code runs on macOS

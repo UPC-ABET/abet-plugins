@@ -49,10 +49,48 @@ Every feature module has the same shape — `api/` (controller, service, docs/sw
 `model/` (entity, dtos), `core/` (repository, validation, validation.spec), `config/`
 (routes, strings). Two exceptions: `auth` has no entity, `mail` has no controller or model.
 
+### File names inside a module
+
+Every file is `<kebab-name>.<kind>.ts` (tests: `<kebab-name>.<kind>.spec.ts`), and the
+`<kind>` decides the folder. **Do not invent a kind** — `course-sections.bands.ts` or
+`course-sections.section-filter.ts` is wrong; the helper is `core/course-sections.functions.ts`.
+
+| Kind | Folder | Holds |
+| --- | --- | --- |
+| `controller`, `service` | `api/` | HTTP surface, orchestration |
+| `swagger` | `api/docs/` | OpenAPI decorators |
+| `entity`, `dtos`, `types`, `labels`, `errors`, `transforms` | `model/` | shapes and data classes |
+| `repository`, `validation`, `client`, `store` | `core/` | all DB access; business-rule validation |
+| `sql` | `core/` | raw SQL text, only imported by the repository |
+| `routes`, `strings` | `config/` | route constants; i18n keys (`config/strings/<module>.validation.ts`) |
+| `functions`, `constants` | any layer | pure helpers and calculations; fixed values |
+| `module` | module root | the Nest module |
+
+A `.service.ts` may also sit in `core/` for a domain service that is not an HTTP surface.
+Only **new** files are checked (`file-name-guard` on `Write`, and the pre-commit gate);
+legacy files that predate this are left alone. Adding a genuinely new kind is a change to
+this table and to `hooks/checks/file-naming.mjs`, never a per-file decision.
+
 Admin-owned functionality lives at `modules/admin/<domain>/<module>` but keeps its
 original `@Entity({ schema, name })` — the folder move does not move the table.
 
 ## The failure modes that actually bite here
+
+### No dead code
+Nothing unused is merged: no unused file, function, export, parameter, import, variable or
+commented-out block. If nothing in this change or already in the tree calls it, delete it —
+git keeps the history, so "for later" is not a reason. A new export whose only caller is
+its own test is dead: the test is the sole user. Wiring by the framework (a Nest provider,
+a decorator, a TypeORM entity) counts as use. An audit reports unused code as **major**,
+never as a suggestion.
+
+### No duplicated logic — the rule of three
+Two copies of a piece of logic are tolerated. The **third** is the trigger to extract it
+into one shared home: a function in `core/<module>.functions.ts` (or `libs/` when it
+crosses modules), a service, or a repository method. Before writing a helper, `git grep`
+for one that already exists. The audit counts copies across the whole repo and reports a
+third one as **major**. Blocks repeated across many modules by convention (the validation
+skeleton) are the pattern, not duplication.
 
 ### Repository boundary
 All database access lives in `core/<module>.repository.ts`. A service must not inject

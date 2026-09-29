@@ -1,5 +1,5 @@
 ---
-description: Create, review and run a TypeORM migration safely against a production database. Enforces CLI-generated timestamps, forward-only changes, a working down(), and explicit constraint naming. Use whenever a change touches the database schema in the backend package.
+description: "Create, review and run a TypeORM migration safely against a production database. Enforces CLI-generated timestamps, forward-only changes, a working down(), and explicit constraint naming. Use whenever a change touches the database schema in the backend package. Cost: light."
 ---
 
 # Write a migration

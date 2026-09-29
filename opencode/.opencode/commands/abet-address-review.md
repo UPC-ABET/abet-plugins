@@ -1,5 +1,5 @@
 ---
-description: Work through review feedback on your own PR. Triages every comment into defect, improvement, product decision or working-as-intended before touching code, escalates anything that would reverse a prior decision, and lands exactly one new commit on top so the reviewer can see what changed.
+description: "Work through review feedback on your own PR. Triages every comment into defect, improvement, product decision or working-as-intended before touching code, escalates anything that would reverse a prior decision, and lands exactly one new commit on top so the reviewer can see what changed. Cost: medium."
 ---
 
 # Address review feedback

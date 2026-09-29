@@ -1,6 +1,6 @@
 ---
 name: abet-verify-contract
-description: Confirm the frontend's API calls match backend/openapi.json at HEAD, and that what's committed matches contract.md when one exists. A local, same-tree check — no network fetch, no other repository. Use before merging any frontend change that calls a new or altered endpoint.
+description: "Confirm the frontend's API calls match backend/openapi.json at HEAD, and that what's committed matches contract.md when one exists. A local, same-tree check — no network fetch, no other repository. Use before merging any frontend change that calls a new or altered endpoint. Cost: light."
 ---
 
 # Verify the backend contract

@@ -17,11 +17,14 @@ Resolve `<slug>` from the branch name; see the slug inference rules in
 
 ### 1. Load context
 
-Read, in this order: `proposal.md`, root `docs/POLICIES.md` and `docs/CONTEXT.md`, every
-ADR in `docs/adr/` whose title touches this area, then the same three (`POLICIES.md`,
-`CONTEXT.md`, `adr/`) under `backend/docs/` and/or `frontend/docs/` for whichever
-package(s) `proposal.md` marks as affected, and the archived sibling change in
-`openspec/specs/` if the proposal identified prior art.
+Read, in this order: `proposal.md`; root `docs/POLICIES.md` and, for whichever package(s)
+`proposal.md` marks as affected, `backend/docs/POLICIES.md` and/or `frontend/docs/POLICIES.md`
+— **each in full**, because they hold every convention the design must respect; every ADR
+in `docs/adr/` (and the package's `adr/`) whose title touches this area; and the archived
+sibling change in `openspec/specs/` if the proposal identified prior art.
+
+Do not read `CONTEXT.md` whole — the backend's is ~100KB. Search root and package
+`CONTEXT.md` for the terms the proposal involves (modules, integrations, domain words).
 
 Then read the code. Design that has not read the code it modifies is fiction.
 

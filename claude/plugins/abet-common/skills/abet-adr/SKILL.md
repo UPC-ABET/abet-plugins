@@ -1,6 +1,6 @@
 ---
 name: abet-adr
-description: Write an Architecture Decision Record. Numbers the next ADR, gathers context, decision, consequences split positive/negative/neutral, and alternatives considered. Use when the ADR gate in /abet-design-feature trips, or whenever a hard-to-reverse technical decision is made.
+description: "Write an Architecture Decision Record. Numbers the next ADR, gathers context, decision, consequences split positive/negative/neutral, and alternatives considered. Use when the ADR gate in /abet-design-feature trips, or whenever a hard-to-reverse technical decision is made. Cost: light."
 ---
 
 # Write an ADR

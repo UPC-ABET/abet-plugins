@@ -1,6 +1,6 @@
 ---
 name: abet-create-pr
-description: Open the pull request against develop with a fully-filled body, linking the openspec change. Verifies the audit passed, the tasks are complete, and the right GitHub account is active. Shows the rendered PR and waits for explicit approval before creating it.
+description: Open the pull request against develop with a fully-filled body, linking the openspec change. Verifies the audit passed, the tasks are complete, and the right GitHub account is active. Shows the rendered PR and waits for explicit approval before creating it. Cost: light.
 ---
 
 # Create the pull request

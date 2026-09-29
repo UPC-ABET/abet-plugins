@@ -121,6 +121,52 @@ function listFiles(p, ext = '.md') {
   return existsSync(p) ? readdirSync(p).filter((f) => f.endsWith(ext)).sort() : [];
 }
 
+/**
+ * Model roles, resolved per provider.
+ *
+ * A skill says what a subagent's job IS — `{{pin:execute}}` for rote work guided by a
+ * plan, `{{pin:procedural}}` for counting, path checks and regexes — and never names a
+ * model. Claude Code maps them to sonnet/haiku and Codex to terra/luna. opencode's model
+ * ids depend on the user's provider, so the role expands to nothing there and the
+ * subagent runs on whatever model the user chose. The plan role has no pin at all on purpose: it runs on the session's own
+ * model, which is the user's decision (a $20 plan and a $100 plan should not be forced
+ * onto the same one).
+ *
+ * Pinning happens per subagent spawn, never in a skill's own frontmatter: a probe skill with
+ * `model: haiku` run in an Opus session still ran on Opus, while a spawn with
+ * `model: "haiku"` was billed to Haiku. A skill-level pin would be inert and misleading.
+ */
+const PINS = {
+  claude: {
+    execute: ' with `model: "sonnet"` set explicitly on every spawn (never omit it: an omitted model inherits the session model, which may be the most expensive one)',
+    procedural: ' with `model: "haiku"` set explicitly on every spawn — the work is mechanical and needs no more',
+  },
+  codex: {
+    execute: ' with `model: "terra"` set explicitly on every spawn (never omit it: an omitted model inherits the session model, which may be the most expensive one)',
+    procedural: ' with `model: "luna"` set explicitly on every spawn — the work is mechanical and needs no more',
+  },
+  opencode: { execute: '', procedural: '' },
+};
+
+/** Expand `{{pin:<role>}}` for one provider; an unknown role is a build error, not silent text. */
+function expandBody(body, provider) {
+  // `{{include:name}}` pastes `shared/snippets/name.md`: text two skills must say identically
+  // (the audit-ledger field table) lives once, so the skills cannot drift apart.
+  const included = body.replace(/\{\{include:([\w-]+)\}\}/g, (_, name) => {
+    const file = join(SHARED, 'snippets', `${name}.md`);
+    if (!existsSync(file)) throw new Error(`unknown snippet "{{include:${name}}}": no ${relative(ROOT, file)}`);
+    return readFileSync(file, 'utf8').replace(/\n+$/, '');
+  });
+  const out = included.replace(/\{\{pin:([\w-]+)\}\}/g, (_, role) => {
+    if (!(role in PINS[provider])) throw new Error(`unknown model role "{{pin:${role}}}" (provider: ${provider})`);
+    return PINS[provider][role];
+  });
+  // A typo like `{{pinn:execute}}` would otherwise ship as literal braces in the prompt.
+  const stray = /\{\{[^}]*\}\}/.exec(out);
+  if (stray) throw new Error(`unexpanded placeholder ${stray[0]} in a skill body (provider: ${provider})`);
+  return out;
+}
+
 /** Every skill in shared/, with its canonical frontmatter parsed. */
 function loadSkills(group) {
   const base = join(SHARED, 'skills', group);
@@ -171,7 +217,7 @@ function buildClaude() {
     for (const skill of loadSkills(profile.skills)) {
       // Claude Code's SKILL.md frontmatter is the canonical form — emit as authored.
       emit(join(dest, 'skills', skill.dir, 'SKILL.md'),
-        renderFrontmatter({ name: skill.name, description: skill.description }) + skill.body);
+        renderFrontmatter({ name: skill.name, description: skill.description }) + expandBody(skill.body, 'claude'));
     }
 
     for (const agent of loadAgents(profile.agents)) {
@@ -203,7 +249,7 @@ function buildCodex() {
 
   for (const group of ['common', 'backend', 'frontend']) {
     for (const skill of loadSkills(group)) {
-      emit(join(dest, 'prompts', `${skill.name}.md`), `${skill.body.trimStart()}`);
+      emit(join(dest, 'prompts', `${skill.name}.md`), `${expandBody(skill.body, 'codex').trimStart()}`);
       index.push({ group, name: skill.name, description: skill.description });
     }
     for (const agent of loadAgents(group)) {
@@ -236,7 +282,7 @@ function buildOpencode() {
   for (const group of ['common', 'backend', 'frontend']) {
     for (const skill of loadSkills(group)) {
       emit(join(dest, '.opencode', 'commands', `${skill.name}.md`),
-        renderFrontmatter({ description: skill.description }) + skill.body);
+        renderFrontmatter({ description: skill.description }) + expandBody(skill.body, 'opencode'));
     }
     for (const agent of loadAgents(group)) {
       emit(join(dest, '.opencode', 'agents', `${agent.name}.md`),

@@ -24,13 +24,15 @@ stays honest.
 
 ### 1. Load the rules that govern the code
 
-Read root `docs/POLICIES.md` in full and the relevant parts of `docs/CONTEXT.md`, plus any
-ADR the design's **Read first** list points at. Then do the same for
-`backend/docs/{POLICIES,CONTEXT}.md` and/or `frontend/docs/{POLICIES,CONTEXT}.md`,
-whichever package(s) the tasks you are executing touch. If the active profile ships a
-stack rules file (`abet-backend/rules/backend.md`, `abet-frontend/rules/frontend.md`),
-read that too. These are the constraints your code will be audited against; reading them
-after the audit is too late.
+Read **in full**: root `docs/POLICIES.md`, and `backend/docs/POLICIES.md` and/or
+`frontend/docs/POLICIES.md` for whichever package(s) the tasks touch, plus the active
+profile's stack rules file (`abet-backend/rules/backend.md`, `abet-frontend/rules/frontend.md`).
+They hold every convention your code will be audited against, so a section you skipped is
+a convention you will break; reading them after the audit is too late.
+
+`CONTEXT.md` is different: the backend's is ~100KB, so do not read it whole. Search it
+(and the ADRs the design's **Read first** list points at) for the terms this task
+involves — the module, the integration, the domain words.
 
 ### 2. Batch the work
 
@@ -39,24 +41,35 @@ checkpointing is what makes a wrong turn cheap.
 
 Before each batch, **partition by files touched**:
 
-- Tasks whose file sets do not intersect → dispatch to parallel subagents, one task
-  each, in a single message.
+- Tasks whose file sets do not intersect → candidates for parallel subagents.
 - Tasks that touch the same files, or where one depends on another's output → run
   serially in this session.
 
-Fan-out is the default, not the exception. Serial execution is the fallback for genuine
-ordering dependencies, not the starting assumption.
+Fan out only when **three or more** independent tasks are ready in the batch. Each
+subagent starts with an empty context and must re-read the rules and its files, so
+splitting two small tasks costs more than doing them one after the other. Below three,
+run them serially here. If the invocation arguments contain `serial`, never fan out.
 
-Each subagent gets: the task block verbatim, the relevant `docs/POLICIES.md` extracts,
-and the instruction to run the task's own test command and report the result.
+When you do fan out, dispatch them in a single message, each as a subagent with `model: "terra"` set explicitly on every spawn (never omit it: an omitted model inherits the session model, which may be the most expensive one).
+Each gets: the task block verbatim, the **paths** of the rules files to read (do not paste
+their contents — that is retyping them once per subagent), and the instruction to run
+the task's own test command and report the result.
 
 ### 3. Execute each task TDD-first
 
 1. Write or update the test named in the task. Run it. **Confirm it fails**, and for the
    right reason — a test that passes before the change tests nothing.
-2. Implement the minimum that makes it pass.
-3. Re-run. Green.
-4. Run the surrounding suite for that module to catch collateral damage.
+2. **Search before you write.** For any helper, query, mapping or validation you are about
+   to add, `git grep` for one that already does it and use it. If you find one, use it.
+   If the logic you need already exists in **two** other places, your copy would be the
+   third — extract it into one shared home (a function in `core/<module>.functions.ts`, or
+   `libs/` when it crosses modules; a service or repository method; on the frontend a
+   shared hook or component) and point all three at it, in this change. The audit counts
+   copies across the repo and reports a third one as major; it is far cheaper to extract
+   now than to be sent back.
+3. Implement the minimum that makes it pass.
+4. Re-run. Green.
+5. Run the surrounding suite for that module to catch collateral damage.
 
 When a library's API is unclear, **look it up** — use the DeepWiki MCP or read the
 source in `node_modules`. Do not guess at signatures and let the typechecker find out.
