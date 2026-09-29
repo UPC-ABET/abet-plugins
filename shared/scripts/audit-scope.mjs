@@ -15,7 +15,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { isMain } from './lib/is-main.mjs';
 import { addedLines } from './lib/diff.mjs';
 import { scanSecurity } from './lib/security.mjs';
 import { findClones, isCloneCandidate } from './lib/clones.mjs';
@@ -317,4 +317,4 @@ function main() {
 }
 
 // Run only as a CLI, so the tests can import the pure functions without side effects.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (isMain(import.meta.url)) main();

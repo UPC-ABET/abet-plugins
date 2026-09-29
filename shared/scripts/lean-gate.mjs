@@ -11,7 +11,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { isMain } from './lib/is-main.mjs';
 import { checkLean } from './lib/lean-gate.mjs';
 
 const git = (args) => {
@@ -49,4 +49,4 @@ function main() {
   console.log(JSON.stringify({ slug, ...checkLean({ proposal, tasks }) }, null, 2));
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (isMain(import.meta.url)) main();
