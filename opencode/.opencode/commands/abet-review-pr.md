@@ -45,7 +45,8 @@ Then establish context the diff alone cannot give you:
    It prints, among other things, `security` (pattern hits against the team's auth, scope
    and SQL rules), `reuse` (code the PR copies, counted across the repo), `deadCode` and
    `docsHits`. They cost nothing and do not depend on you noticing. If the head is not
-   checked out or the script is missing, apply the same checks by hand with `git grep`.
+   checked out, or the script is missing, errors or prints nothing (a failure, not an empty
+   result — say so in one line), apply the same checks by hand with `git grep`.
 4. **Read the change folder** if one exists: `proposal.md` for the acceptance criteria,
    `design.md` for the intended approach. Review against what was agreed, not against how
    you would have built it.

@@ -51,8 +51,10 @@ task file with no checkboxes, routes or DTOs changed with `openapi.json` untouch
 `security` — pattern hits against the team's own auth, scope and SQL rules, plus secrets and
 new dependencies — `reuse` — code this diff copies, counted across the whole repo — and the
 chosen `depth` with its `reasons`. Take its answers as given — do not re-derive them.
-If it prints `empty` there is nothing to audit; stop. If the file is missing (the package
-is not installed) or it errors, do steps 1–5 by hand as written below.
+If it prints `empty` there is nothing to audit; stop. If the file is missing, it errors, or
+it prints **nothing at all**, that is a failure, not an empty result: tell the user in one
+line (a missing file usually means `pnpm update abet-plugins` has not been run, or the
+command needs allowing), then do steps 1–5 by hand as written below.
 
 1. **Base branch**: `develop`. Confirm it exists locally and is current:
    `git fetch origin develop`.

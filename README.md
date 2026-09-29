@@ -46,6 +46,20 @@ Install scope for this team is **per-user** (`/plugin install ... ` at user or l
 scope, not project scope): `.claude/` is gitignored in `ACC-SYS`, so a project-scoped
 install would not be shared by committing it anyway.
 
+**The scripts come from the npm package, not the plugin.** The audit, quick-lane and ledger
+skills call `node node_modules/abet-plugins/shared/scripts/*.mjs`. `ACC-SYS` depends on
+`abet-plugins` through a git URL that pnpm pins to one commit, so after a release run
+`pnpm update abet-plugins` there, or the skills fall back to slower manual steps and say so.
+To stop the agent asking permission for every call, allow the scripts once in
+`.claude/settings.json`:
+
+```json
+{ "permissions": { "allow": ["Bash(node node_modules/abet-plugins/shared/scripts/*)"] } }
+```
+
+They work on Windows, macOS and Linux (plain Node 20+, `git` on the PATH), including through
+the link pnpm creates for the package.
+
 **Codex** — copy `codex/prompts/*.md` into `~/.codex/prompts/`. Codex reads `AGENTS.md`
 from the repository root for conventions.
 

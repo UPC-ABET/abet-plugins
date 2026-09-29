@@ -99,6 +99,10 @@ Then run the gate:
 node node_modules/abet-plugins/shared/scripts/lean-gate.mjs
 ```
 
+If the script is missing, errors or prints nothing, that is a failure, not a pass: say so in
+one line and apply the refusal list above by hand against your own plan, counting tasks and
+files and checking each condition. Never treat a silent gate as an open one.
+
 `eligible: false` means stop. Show the reasons, keep `proposal.md` (it is a valid input to
 the full lane) and tell the requester to run `/abet-define-task`. Nothing has been built.
 
