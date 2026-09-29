@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "abet-common",
   "displayName": "ABET Common",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Mandatory base for every ABET repo: the spec-driven delivery pipeline, the git-policy hooks, and the openspec/ + docs/ conventions.",
   "author": {
     "name": "UPC-ABET",
