@@ -26,6 +26,7 @@ import { isAuthored } from '../lib/paths.mjs';
 import { resolveTool, readPackageJson, runNode, git, excerpt } from '../lib/toolchain.mjs';
 import { findWorkspacePackages, packageFor } from '../lib/workspace.mjs';
 import { scanDiff } from '../lib/secrets.mjs';
+import { checkNewFiles } from './file-naming.mjs';
 
 const CODE_EXT = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 const FORMAT_EXT = /\.(ts|tsx|js|jsx|mjs|cjs|json|md|css|scss|ya?ml)$/;
@@ -80,6 +81,22 @@ export function runPreCommitChecks(root, env = process.env) {
       'Move the value to an environment variable and reference it through the config service. ' +
       'If this is genuinely a fixture or example, add an `abet-allow-secret` comment on that line.'
     );
+  }
+
+  // --- 1b. naming of newly added module files ---------------------------------
+  // Added files only: legacy files that predate the `<name>.<kind>.ts` vocabulary must
+  // not block every commit that happens to touch them.
+  if (env.ABET_SKIP_NAMING !== '1') {
+    const added = git(root, ['diff', '--cached', '--name-only', '--diff-filter=A'])
+      .split('\n').map((s) => s.trim()).filter(Boolean);
+    const misnamed = checkNewFiles(added);
+    if (misnamed.length > 0) {
+      const list = misnamed.slice(0, 10).map((m) => `  ${m.path}\n    ${m.problem}`).join('\n');
+      return block(
+        `${misnamed.length} new file(s) break the module file-naming convention.\n${list}\n\n` +
+        'Rename them (`git mv`), stage the result, and commit again.'
+      );
+    }
   }
 
   // --- 2. group staged files by the package they live under -------------------
