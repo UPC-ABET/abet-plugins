@@ -221,7 +221,10 @@ below. Do not let a hit go unmentioned.
   URL used unchecked (traversal, SSRF); unbounded size or count; a spreadsheet cell that
   starts with `=`, `+`, `-` or `@` (formula injection in an export).
 - **What comes back?** A field that should not leave (hashes, tokens, another school's
-  rows); an error message that leaks a query or a path.
+  rows); an error message that leaks a query or a path. **A number is data too:** a count,
+  sum or average over rows that can belong to another school leaks those rows as a total.
+  Guarding the *parent* is not enough — a section owned by your school can still hold
+  another school's students, and a `JOIN` or `COUNT` over them needs its own school filter.
 - **What does it touch?** A file, network call, queue, cache or storage key — is the
   school in every key and path?
 - **What happens under repetition?** Work per request that grows with the data, no limit

@@ -257,6 +257,29 @@ model policy. Three rules instead:
 
 Every skill's description ends in a `Cost:` label so you can see what you are about to spend.
 
+### The quick lane: `/abet-quick`
+
+For an additive change to an existing module, define → design → implement is three sessions
+that each re-read the same rules, re-explore the same code and write three documents.
+`/abet-quick` plans and builds in **one** session and keeps every proof the full pipeline
+produces: `POLICIES.md` read in full (once), testable acceptance criteria and the ambiguity
+gate, the ADR gate, `tasks.md` with the boxes the audit counts, and TDD (a test seen failing
+for the right reason, then passing — per batch of up to three tasks instead of per task).
+It drops the ceremony: no `design.md` or runbook (a short *Approach* in the proposal), no
+subagent fan-out, no repeated reads. `/abet-audit-pr`, `/abet-create-pr` and the ledger are
+unchanged, and the audit still measures the real diff, so a change that grew is audited as
+one that grew.
+
+Whether a change may use it is decided by a script, not by mood (`lean-gate.mjs`, run on the
+plan the model just wrote): more than 5 tasks or 8 source files (tests, docs and the
+regenerated `openapi.json` do not count), a migration, dependency or deploy change, a new
+module, both packages, an open product question, an ADR-gate **Yes**, or a plan with no
+**Scope check** all send it to `/abet-define-task`. The Scope check exists because a cheap
+plan reads one module and can miss that a row is shared across schools: for every table the
+change reads or counts, the proposal says whether its rows can belong to several schools,
+and where they can, the aggregate filters by the caller's school and has its own acceptance
+criterion. A count over another school's students is that school's data leaking as a number.
+
 ### Module file names are checked by code
 
 Files under `backend/src/modules/` are `<name>.<kind>.ts`, and the kind fixes the folder

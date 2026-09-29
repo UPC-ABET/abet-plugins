@@ -48,6 +48,20 @@ is what makes review verifiable instead of narrative.
 Other changes, migrations, seeds, or external systems (Banner, uPlanner, Azure AD, S3)
 this relies on.
 
+## Scope check
+
+Required whenever the change reads, joins or aggregates data. One row per **table** the
+change touches: how the caller's school reaches those rows, and whether a row (or a group)
+can belong to **more than one** school — a section under programs of two schools, a user in
+several. Where it can, an aggregate must count only the caller's own school's rows: a count
+over another school's students is that school's data leaking as a number. That case needs its
+own acceptance criterion and a failing-first test. `No` is a valid answer only with its
+evidence (the unique key, the ADR, the code that shows it).
+
+| Table | Scoped to the caller's school by | Can rows be shared across schools? | Covered by |
+| ----- | -------------------------------- | ---------------------------------- | ---------- |
+|       |                                  |                                    | AC-?       |
+
 ## Risks
 
 | Risk | Impact | Mitigation |

@@ -58,6 +58,7 @@ the code, note it and move on; do not perform an interview for its own sake.
 | Non-goals | What is explicitly out of scope, so review does not drift into it. |
 | Acceptance criteria | Testable Given/When/Then. Each one must be verifiable by a human or a test. |
 | Packages affected | Backend only, frontend only, or both. This decides the `## Backend`/`## Frontend` sectioning in design. |
+| Scope | For every table the change reads, joins or aggregates: how the caller's school reaches those rows, and whether one row or group can belong to **several** schools (a section under programs of two schools). An aggregate over a shared table must count only the caller's school's rows, and that case gets its own AC. Filled into the proposal's **Scope check** table. |
 | Dependencies | Other changes, data migrations, external systems (Banner, uPlanner, Azure, S3). |
 | Risks | What could break, what is uncertain, what has bitten us here before. |
 
