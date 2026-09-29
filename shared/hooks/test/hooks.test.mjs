@@ -24,6 +24,7 @@ import { isAuthored, isScannable as isScannablePath } from '../lib/paths.mjs';
 import { validateCommitMessage } from '../checks/commit-message.mjs';
 import { runPreCommitChecks } from '../checks/pre-commit.mjs';
 import { checkModuleFileName } from '../checks/file-naming.mjs';
+import { checkLean, openQuestions, scopeCheckRows, BOUNDS } from '../../scripts/lib/lean-gate.mjs';
 import { validateRecord, aggregate, renderReport } from '../../scripts/lib/ledger.mjs';
 import { findClones } from '../../scripts/lib/clones.mjs';
 import { scanSecurity, findRouteAuthIssues, findUnusedScopeParams } from '../../scripts/lib/security.mjs';
@@ -1121,6 +1122,88 @@ check('ledger: a non-object is rejected', errs('x').length, 1);
   check('ledger cli: a corrupt line is skipped, not fatal', JSON.parse(ledger(['report', '--json']).stdout).malformed, 1);
   rmSync(dir, { recursive: true, force: true });
 }
+
+// ---------------------------------------------------------------- lean gate
+console.log('lean gate (quick lane eligibility)');
+
+// annotations go OUTSIDE the backticks, as templates/tasks.md writes them: - `path` (modify)
+const fileLine = (f) => {
+  const m = /^(\S+)(?: \((.*)\))?$/.exec(f);
+  return `- \`${m[1]}\`${m[2] ? ` (${m[2]})` : ''}`;
+};
+const box = (n, files) => `### Task ${n} — t${n}\n\n- [ ] Task complete\n\n**Files**\n${files.map(fileLine).join('\n')}\n`;
+const plan = (taskFiles) => `# Tasks\n\n${taskFiles.map((f, i) => box(i + 1, f)).join('\n')}`;
+const SCOPE_TABLE = '| Table | Scoped to the caller\'s school by | Can rows be shared across schools? | Covered by |\n| --- | --- | --- | --- |\n';
+const scopeSection = (rows) => `## Scope check\n\n${SCOPE_TABLE}${rows}\n\n`;
+const OK_ROW = '| academic.course_sections | EXISTS over the school\'s study plans | No: one section, one course (unique key) | AC-1 |';
+const PROP = `# P\n\n## Acceptance criteria\n1. x\n\n${scopeSection(OK_ROW)}## Open questions\n\nNone\n`;
+const propWith = (rows) => `# P\n\n## Acceptance criteria\n1. x\n\n${rows === null ? '' : scopeSection(rows)}## Open questions\n\nNone\n`;
+const B = 'backend/src/modules/a/b';
+const small = plan([[`${B}/api/b.controller.ts (modify)`, `${B}/api/b.controller.spec.ts (test)`], [`${B}/api/b.service.ts (modify)`], [`${B}/core/b.repository.ts (modify)`]]);
+const lean = (proposal, tasks) => checkLean({ proposal, tasks });
+
+check('lean gate: a small, clean plan is eligible', lean(PROP, small).eligible, true);
+check('lean gate: it reports what it counted', JSON.stringify(lean(PROP, small).stats), '{"tasks":3,"sourceFiles":3,"files":4,"packages":["backend"]}');
+check('lean gate: more than 5 tasks goes to the full lane', lean(PROP, plan(Array.from({ length: 6 }, (_, i) => [`${B}/f${i}.ts`]))).reasons.some((r) => /6 tasks/.test(r)), true);
+check('lean gate: too many source files goes to the full lane',
+  lean(PROP, plan([Array.from({ length: BOUNDS.sourceFiles + 1 }, (_, i) => `${B}/f${i}.ts`)])).reasons.some((r) => /source files/.test(r)), true);
+check('lean gate: exactly the bound is still eligible',
+  lean(PROP, plan([Array.from({ length: BOUNDS.sourceFiles }, (_, i) => `${B}/f${i}.ts`)])).eligible, true);
+check('lean gate: a layered endpoint (7 files) fits — the bound is calibrated on this codebase',
+  lean(PROP, plan([['controller', 'service', 'repository', 'validation', 'dtos', 'swagger', 'routes'].map((k) => `${B}/${k}.ts`)])).eligible, true);
+check('lean gate: tests are not counted against the change',
+  lean(PROP, plan([[...Array.from({ length: 8 }, (_, i) => `${B}/f${i}.ts`), ...Array.from({ length: 7 }, (_, i) => `${B}/f${i}.spec.ts`)]])).eligible, true);
+check('lean gate: docs and the regenerated spec are not counted',
+  lean(PROP, plan([[...Array.from({ length: 8 }, (_, i) => `${B}/f${i}.ts`), 'backend/openapi.json', 'backend/docs/CONTEXT.md', 'openspec/changes/x/runbook.md']])).eligible, true);
+check('lean gate: touching both packages goes to the full lane',
+  lean(PROP, plan([[`${B}/a.ts`, 'frontend/src/modules/a/b.tsx']])).reasons.some((r) => /both backend and frontend/.test(r)), true);
+check('lean gate: a migration goes to the full lane',
+  lean(PROP, plan([[`${B}/a.ts`, 'backend/src/database/migrations/1700-add.ts']])).reasons.some((r) => /migration/.test(r)), true);
+check('lean gate: a dependency change goes to the full lane',
+  lean(PROP, plan([[`${B}/a.ts`, 'backend/package.json']])).reasons.some((r) => /dependency/.test(r)), true);
+check('lean gate: deploy config goes to the full lane', lean(PROP, plan([[`${B}/a.ts`, 'docker/compose.yml']])).eligible, false);
+check('lean gate: the rulebook is never the quick lane\'s to edit', lean(PROP, plan([[`${B}/a.ts`, 'docs/POLICIES.md']])).eligible, false);
+check('lean gate: a new module is structural', lean(PROP, plan([[`${B}/b.module.ts (new)`]])).reasons.some((r) => /new module/.test(r)), true);
+check('lean gate: editing an existing module is fine', lean(PROP, plan([[`${B}/b.module.ts (modify)`, `${B}/a.ts`]])).eligible, true);
+check('lean gate: an open question goes to the full lane',
+  lean(PROP.replace('None', '1. Does "withdrawn" mean is_active false?'), small).reasons.some((r) => /open question/.test(r)), true);
+check('lean gate: a question wrapped over two lines is one question, not two',
+  JSON.stringify(openQuestions(PROP.replace('None', '**Non-empty.** Not ready.\n\n1. Does withdrawn mean\n   is_active false, or a status?\n2. Should shared sections be visible\n   to every school?'))),
+  '["Does withdrawn mean","Should shared sections be visible"]');
+check('lean gate: prose under Open questions with no list is one question',
+  openQuestions(PROP.replace('None', 'Nobody has said whether withdrawn is a flag.')).length, 1);
+check('lean gate: "None" and comments are not open questions',
+  lean(PROP.replace('None', '<!-- nothing yet -->\nNone'), small).eligible, true);
+check('lean gate: confirmed assumptions are not open questions',
+  lean(PROP + '\n## Assumptions (confirmed)\n\n1. Withdrawn means is_active false.\n', small).eligible, true);
+check('lean gate: an ADR-gate row answered Yes goes to the full lane',
+  lean(PROP + '\n| Trigger | Hit? |\n| --- | --- |\n| New module boundary | Yes |\n', small).reasons.some((r) => /ADR gate/.test(r)), true);
+check('lean gate: an ADR-gate row answered No or "assessed" is fine',
+  lean(PROP + '\n| Trigger | Hit? |\n| --- | --- |\n| Datastore | No |\n| Public API | Partially — assessed, not an ADR |\n', small).eligible, true);
+// the Scope check: a quick plan reads one module and can miss that a row is shared across schools
+check('lean gate: a plan that reads data with no Scope check is refused',
+  lean(propWith(null), small).reasons.some((r) => /no "## Scope check"/.test(r)), true);
+check('lean gate: an empty Scope check table is refused',
+  lean(propWith(''), small).reasons.some((r) => /no filled rows/.test(r)), true);
+check('lean gate: the template\'s blank row does not count',
+  lean(propWith('|  |  |  | AC-? |'), small).reasons.some((r) => /no filled rows/.test(r)), true);
+check('lean gate: a row that does not say whether rows are shared is refused',
+  lean(propWith('| academic.course_sections | EXISTS over study plans |  |  |'), small).reasons.some((r) => /incomplete/.test(r)), true);
+check('lean gate: a shared table with no acceptance criterion is refused',
+  lean(propWith('| academic.student_section_enrollments | via the student\'s program | Yes: a section can hold two schools\' students |  |'), small)
+    .reasons.some((r) => /shared across schools but no acceptance criterion/.test(r)), true);
+check('lean gate: a shared table covered by an AC is eligible',
+  lean(propWith('| academic.student_section_enrollments | via the student\'s program | Yes: a section can hold two schools\' students | AC-3 |'), small).eligible, true);
+check('lean gate: a controller-only plan needs no Scope check',
+  lean(propWith(null), plan([[`${B}/api/b.controller.ts (modify)`]])).eligible, true);
+check('lean gate: a plan touching a repository needs one',
+  lean(propWith(null), plan([[`${B}/core/b.repository.ts (modify)`]])).eligible, false);
+check('lean gate: several tables are each checked',
+  lean(propWith(`${OK_ROW}\n| academic.enrolled_students | via the program | Yes: shared |  |`), small).eligible, false);
+check('lean gate: scopeCheckRows reads only filled rows',
+  scopeCheckRows(propWith(`${OK_ROW}\n|  |  |  | AC-? |`)).length, 1);
+check('lean gate: a plan with no boxes cannot be audited', lean(PROP, '# Tasks\n### Task 1.1 — x\n').reasons.some((r) => /no `- \[ \] Task complete`/.test(r)), true);
+check('lean gate: a plan that names no files is refused', lean(PROP, '# Tasks\n### Task 1.1 — x\n\n- [ ] Task complete\n').reasons.some((r) => /no source files/.test(r)), true);
 
 // ----------------------------------------------------------------- report
 console.log('');
