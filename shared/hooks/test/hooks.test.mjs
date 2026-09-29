@@ -13,9 +13,9 @@
  * repo — is exercised against real `git init` fixtures with stub tool binaries further down.
  */
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, relative } from 'node:path';
-import { writeFileSync, mkdirSync, mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync, mkdtempSync, rmSync, existsSync, readFileSync, cpSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { gitInvocations, tokenize, splitSegments, gitCommandCwd } from '../lib/shell.mjs';
 import { scanDiff } from '../lib/secrets.mjs';
@@ -24,6 +24,7 @@ import { isAuthored, isScannable as isScannablePath } from '../lib/paths.mjs';
 import { validateCommitMessage } from '../checks/commit-message.mjs';
 import { runPreCommitChecks } from '../checks/pre-commit.mjs';
 import { checkModuleFileName } from '../checks/file-naming.mjs';
+import { isMain } from '../../scripts/lib/is-main.mjs';
 import { checkLean, openQuestions, scopeCheckRows, BOUNDS } from '../../scripts/lib/lean-gate.mjs';
 import { validateRecord, aggregate, renderReport } from '../../scripts/lib/ledger.mjs';
 import { findClones } from '../../scripts/lib/clones.mjs';
@@ -1121,6 +1122,40 @@ check('ledger: a non-object is rejected', errs('x').length, 1);
   writeFileSync(file, readFileSync(file, 'utf8') + 'not json\n');
   check('ledger cli: a corrupt line is skipped, not fatal', JSON.parse(ledger(['report', '--json']).stdout).malformed, 1);
   rmSync(dir, { recursive: true, force: true });
+}
+
+// ------------------------------------------- scripts run through a package link
+console.log('scripts through a link (how pnpm installs the package)');
+
+// pnpm links node_modules/abet-plugins into .pnpm/; the agent types the LINK path. A script that
+// decides "was I run directly?" by comparing that path to its real one prints nothing at all,
+// which reads as "cannot run the script". Each CLI must answer when started through a link.
+{
+  const base = mkdtempSync(join(tmpdir(), 'abet-link-'));
+  const real = join(base, 'real');
+  mkdirSync(real);
+  cpSync(join(HOOKS, '..', 'scripts'), join(real, 'scripts'), { recursive: true });
+  cpSync(join(HOOKS, 'lib'), join(real, 'hooks', 'lib'), { recursive: true });
+  const link = join(base, 'link');
+  symlinkSync(real, link, 'junction'); // a junction needs no privilege on Windows; ignored elsewhere
+  const work = mkdtempSync(join(tmpdir(), 'abet-link-cwd-')); // not a git repo: each script must still say something
+  const out = (dir, script, args = []) => spawnSync(process.execPath, [join(dir, 'scripts', script), ...args], { cwd: work, encoding: 'utf8' }).stdout.trim();
+
+  for (const [script, args] of [['audit-scope.mjs', []], ['lean-gate.mjs', []], ['audit-ledger.mjs', ['path']]]) {
+    const viaReal = out(real, script, args);
+    const viaLink = out(link, script, args);
+    check(`link: ${script} prints something when run from its real path`, viaReal.length > 0, true);
+    check(`link: ${script} prints the same through a link`, viaLink, viaReal);
+  }
+  check('link: isMain is true for a link to the running script',
+    isMain(pathToFileURL(join(real, 'scripts', 'lean-gate.mjs')).href, join(link, 'scripts', 'lean-gate.mjs')), true);
+  check('link: isMain is false for a different script',
+    isMain(pathToFileURL(join(real, 'scripts', 'lean-gate.mjs')).href, join(real, 'scripts', 'audit-scope.mjs')), false);
+  check('link: isMain is false when there is no argv[1]', isMain(pathToFileURL(join(real, 'scripts', 'lean-gate.mjs')).href, undefined), false);
+  check('link: isMain is false for a path that does not exist',
+    isMain(pathToFileURL(join(real, 'scripts', 'lean-gate.mjs')).href, join(base, 'nope.mjs')), false);
+  rmSync(base, { recursive: true, force: true }); // everything under it is a throwaway copy
+  rmSync(work, { recursive: true, force: true });
 }
 
 // ---------------------------------------------------------------- lean gate
