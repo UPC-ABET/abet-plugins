@@ -23,6 +23,12 @@ import { slugFromBranch } from '../lib/branches.mjs';
 import { isAuthored, isScannable as isScannablePath } from '../lib/paths.mjs';
 import { validateCommitMessage } from '../checks/commit-message.mjs';
 import { runPreCommitChecks } from '../checks/pre-commit.mjs';
+import { checkModuleFileName } from '../checks/file-naming.mjs';
+import { validateRecord, aggregate, renderReport } from '../../scripts/lib/ledger.mjs';
+import { findClones } from '../../scripts/lib/clones.mjs';
+import { scanSecurity, findRouteAuthIssues, findUnusedScopeParams } from '../../scripts/lib/security.mjs';
+import { addedLines } from '../../scripts/lib/diff.mjs';
+import { measure, chooseDepth, countTasks, packageOf, newTerms, findDocHits, headingsOf, addedByFile, exportedNames, findDeadCode, RISKY } from '../../scripts/audit-scope.mjs';
 import { findWorkspacePackages, packageFor } from '../lib/workspace.mjs';
 
 const HOOKS = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -605,6 +611,515 @@ function buildWorkspaceRepo(prefix) {
 
   rmSync(dir, { recursive: true, force: true });
   rmSync(records, { recursive: true, force: true });
+}
+
+// ------------------------------------------------------- module file naming
+console.log('module file naming');
+
+const M = 'backend/src/modules/academic/course-sections';
+const named = (path) => (checkModuleFileName(path) === null ? 'ok' : 'bad');
+
+// the files the convention exists to protect
+for (const f of ['api/course-sections.service.ts', 'api/course-sections.controller.ts',
+  'api/docs/course-sections.swagger.ts', 'model/course-sections.entity.ts',
+  'model/course-sections.dtos.ts', 'model/course-sections.types.ts',
+  'core/course-sections.repository.ts', 'core/course-sections.validation.ts',
+  'core/course-sections.functions.ts', 'config/course-sections.routes.ts',
+  'course-sections.module.ts', 'api/course-sections.service.spec.ts',
+  'core/course-sections.validation.spec.ts', 'decorators/roles.decorator.ts',
+  'config/strings/course-sections.validation.ts', 'core/user-schools/user-schools.repository.ts',
+  'core/browser-auth.client.ts']) {
+  check(`naming: ${f} is accepted`, named(`${M}/${f}`), 'ok');
+}
+
+// what the model actually produced, plus the near misses
+// `modules/core/` is a domain group, not the `core/` layer
+check('naming: a module inside the `core` domain group is accepted',
+  named('backend/src/modules/core/parameters/parameters.module.ts'), 'ok');
+check('naming: layers still resolve inside the `core` domain group',
+  named('backend/src/modules/core/parameters/api/parameters.service.ts'), 'ok');
+check('naming: .bands.ts is rejected', named(`${M}/core/course-sections.bands.ts`), 'bad');
+check('naming: .section-filter.ts is rejected', named(`${M}/core/course-sections.section-filter.ts`), 'bad');
+check('naming: a kind in the wrong folder is rejected', named(`${M}/core/course-sections.controller.ts`), 'bad');
+check('naming: a service in model/ is rejected', named(`${M}/model/course-sections.service.ts`), 'bad');
+check('naming: controller at the module root is rejected', named(`${M}/course-sections.controller.ts`), 'bad');
+check('naming: kind-less file is rejected', named(`${M}/core/helpers.ts`), 'bad');
+check('naming: camelCase name is rejected', named(`${M}/core/courseSections.functions.ts`), 'bad');
+check('naming: spec of an unknown kind is rejected', named(`${M}/core/course-sections.bands.spec.ts`), 'bad');
+check('naming: message names the offending kind',
+  checkModuleFileName(`${M}/core/course-sections.bands.ts`).includes('.bands.ts'), true);
+check('naming: message points at .functions.ts',
+  checkModuleFileName(`${M}/core/course-sections.bands.ts`).includes('functions'), true);
+check('naming: message says where a misplaced kind belongs',
+  checkModuleFileName(`${M}/core/course-sections.controller.ts`).includes('`api/`'), true);
+
+// out of scope: anything not under src/modules, and non-TypeScript files
+check('naming: outside src/modules is ignored', named('backend/src/libs/global.functions.ts'), 'ok');
+check('naming: frontend is ignored', named('frontend/src/modules/x/foo.bands.ts'), 'ok');
+check('naming: non-ts file is ignored', named(`${M}/core/notes.md`), 'ok');
+check('naming: windows separators are handled', named(`backend\\src\\modules\\a\\b\\core\\b.bands.ts`), 'bad');
+
+// the Write hook
+function writeVerdict(file_path) {
+  const res = spawnSync(process.execPath, [join(HOOKS, 'file-name-guard.mjs')], {
+    input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path, content: '' } }),
+    encoding: 'utf8', timeout: 30_000,
+  });
+  const out = (res.stdout || '').trim();
+  return out && JSON.parse(out).hookSpecificOutput?.permissionDecision === 'deny' ? 'deny' : 'allow';
+}
+check('write hook: denies a new .bands.ts', writeVerdict(join(tmpdir(), `x/${M}/core/course-sections.bands.ts`)), 'deny');
+check('write hook: allows a well-named new file', writeVerdict(join(tmpdir(), `x/${M}/core/course-sections.functions.ts`)), 'allow');
+check('write hook: ignores other paths', writeVerdict(join(tmpdir(), 'x/README.md')), 'allow');
+check('write hook: never blocks rewriting a file that already exists',
+  writeVerdict(join(HOOKS, 'checks', 'file-naming.mjs')), 'allow');
+
+// the pre-commit gate: new files are checked, legacy files being modified are not
+{
+  const dir = buildWorkspaceRepo('abet-pc-naming-');
+  stage(dir, `${M}/core/legacy-codes.ts`); // predates the convention
+  spawnSync('git', ['commit', '-q', '-m', 'chore: seed'], { cwd: dir });
+
+  stage(dir, `${M}/core/legacy-codes.ts`, 'export const x = 2;\n');
+  check('naming gate: modifying a legacy misnamed file passes', runPreCommitChecks(dir, {}).ok, true);
+
+  stage(dir, `${M}/core/course-sections.bands.ts`);
+  const blocked = runPreCommitChecks(dir, {});
+  check('naming gate: adding a misnamed file blocks', blocked.ok, false);
+  check('naming gate: block lists the file', blocked.message.includes('course-sections.bands.ts'), true);
+  check('naming gate: ABET_SKIP_NAMING=1 bypasses it', runPreCommitChecks(dir, { ABET_SKIP_NAMING: '1' }).ok, true);
+
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// ------------------------------------------------------------ audit-scope
+console.log('audit-scope (depth selection)');
+
+const scope = (o) => chooseDepth({ requested: 'auto', lines: 50, files: 3, packages: ['backend'], risky: [], ...o });
+check('audit-scope: small clean diff is lite', scope({}).depth, 'lite');
+check('audit-scope: many lines is deep', scope({ lines: 401 }).depth, 'deep');
+check('audit-scope: exactly at the line limit stays lite', scope({ lines: 400 }).depth, 'lite');
+check('audit-scope: many files is deep', scope({ files: 16 }).depth, 'deep');
+check('audit-scope: both packages is deep', scope({ packages: ['backend', 'frontend'] }).depth, 'deep');
+check('audit-scope: a sensitive path is deep even when tiny',
+  scope({ lines: 5, files: 1, risky: [{ file: 'backend/src/database/migrations/1-x.ts', why: 'database migration' }] }).depth, 'deep');
+check('audit-scope: --depth lite overrides a big diff', scope({ requested: 'lite', lines: 9000 }).depth, 'lite');
+check('audit-scope: --depth deep overrides a tiny diff', scope({ requested: 'deep' }).depth, 'deep');
+check('audit-scope: reasons name what tipped it', scope({ lines: 500 }).reasons[0].includes('500'), true);
+
+// what counts as "size": code, not the docs, tests or generated spec around it
+{
+  const numstat = [
+    '30\t2\tbackend/src/modules/a/api/a.service.ts',
+    '20\t0\tbackend/src/modules/a/api/a.controller.ts',
+    '90\t0\tbackend/src/modules/a/api/a.service.spec.ts',
+    '600\t0\topenspec/changes/x/design.md',
+    '57\t0\tbackend/openapi.json',
+    '5\t1\tbackend/docs/CONTEXT.md',
+    '-\t-\tlogo.png',
+  ].join('\n');
+  const m = measure(numstat);
+  check('audit-scope: only non-test source counts as lines', m.lines, 52);
+  check('audit-scope: only non-test source counts as files (binary included)', m.files, 3);
+  check('audit-scope: the raw total still includes everything', m.totalLines, 805);
+  check('audit-scope: a normal API change is lite (docs, tests and openapi.json do not tip it)',
+    chooseDepth({ requested: 'auto', lines: m.lines, files: m.files, packages: ['backend'], risky: ['openapi.json'].flatMap((f) => RISKY.filter((r) => r.re.test(f))) }).depth, 'lite');
+  check('audit-scope: openapi.json is not a risky path', RISKY.some((r) => r.re.test('backend/openapi.json')), false);
+}
+
+const riskyOf = (f) => RISKY.some((r) => r.re.test(f));
+check('audit-scope: migrations are risky', riskyOf('backend/src/database/migrations/1700-add.ts'), true);
+check('audit-scope: auth folder is risky', riskyOf('backend/src/modules/auth/guards/jwt.guard.ts'), true);
+check('audit-scope: an ordinary service is not', riskyOf('backend/src/modules/academic/courses/api/courses.service.ts'), false);
+check('audit-scope: packageOf backend', packageOf('backend/src/x.ts'), 'backend');
+check('audit-scope: packageOf root file', packageOf('docker/compose.yml'), 'root');
+
+{
+  const dir = mkdtempSync(join(tmpdir(), 'abet-scope-'));
+  writeFileSync(join(dir, 'tasks.md'), '- [x] one\n  - [X] two\n- [ ] three\nnot a task\n');
+  writeFileSync(join(dir, 'tasks-backend.md'), '- [ ] four\n');
+  writeFileSync(join(dir, 'design.md'), '- [ ] ignored, not a tasks file\n');
+  const c = countTasks(dir);
+  check('audit-scope: counts open tasks across tasks*.md only', c.open, 2);
+  check('audit-scope: counts done tasks, either case', c.done, 2);
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// docs-currency lookup: terms the diff introduces, matched against CONTEXT.md lines
+check('audit-scope: a scoped package yields itself and its short name',
+  newTerms(["+import { S3Client } from '@aws-sdk/client-s3';"]).join(','), '@aws-sdk/client-s3,s3');
+check('audit-scope: relative and src/ imports are not terms',
+  newTerms(["+import { a } from './a';", "+import { b } from 'src/libs/b';"]).length, 0);
+check('audit-scope: env vars are terms', newTerms(['+const r = process.env.AWS_REGION;']).join(','), 'AWS_REGION');
+{
+  // `nestjs` appears on 7 lines, so it is generic and must be dropped; `s3` appears once.
+  const docs = [{ file: 'backend/docs/CONTEXT.md', text: `intro\nAWS S3 is configured but not yet wired\n${'nestjs\n'.repeat(7)}` }];
+  const hits = findDocHits(['s3', 'nestjs', 'kafka'], docs);
+  check('audit-scope: a doc line naming the term is returned', hits.length, 1);
+  check('audit-scope: the hit carries file and line', `${hits[0].file}:${hits[0].line}`, 'backend/docs/CONTEXT.md:2');
+  check('audit-scope: a term absent from the docs yields nothing', findDocHits(['kafka'], docs).length, 0);
+  check('audit-scope: a generic term (many hits) is dropped',
+    findDocHits(['x'], [{ file: 'f', text: Array(7).fill('x here').join('\n') }]).length, 0);
+  check('audit-scope: matching is on whole words', findDocHits(['s3'], [{ file: 'f', text: 'ms3x' }]).length, 0);
+}
+
+// rules checklist: one line per `##` heading, none invented from code fences
+check('audit-scope: headings are the ## sections only',
+  headingsOf('# Title\n## One\ntext\n### Sub\n## Two\n').join('|'), 'One|Two');
+check('audit-scope: a ## inside a code fence is not a heading',
+  headingsOf('## Real\n```md\n## Example\n```\n## Also real\n').join('|'), 'Real|Also real');
+
+// dead code: new files nothing imports, new exports nothing references
+{
+  const diff = [
+    '+++ b/backend/src/m/core/m.section-filter.ts', '+export const sectionFilter = () => 1;',
+    '+++ b/backend/src/m/core/m.repository.ts', '+export async function loadBands() {}', '+export class Used {}',
+    '+++ b/backend/src/m/core/m.functions.spec.ts', '+export const fixture = 1;',
+    '+++ b/backend/src/database/migrations/1-x.ts', '+export class AddX1 {}',
+    '+++ b/README.md', '+ignored',
+  ].join('\n');
+  const added = addedByFile(diff);
+  check('audit-scope: additions are grouped by file', [...added.keys()].length, 5);
+  check('audit-scope: exports are extracted by name', exportedNames(added.get('backend/src/m/core/m.repository.ts')).join(','), 'loadBands,Used');
+  const used = new Set(['Used']);
+  const dead = findDeadCode({
+    addedFiles: new Set(['backend/src/m/core/m.section-filter.ts']),
+    added,
+    usedElsewhere: (term) => used.has(term),
+  });
+  check('audit-scope: a new file nothing imports is dead', dead.some((d) => d.file.endsWith('section-filter.ts') && !d.name), true);
+  check('audit-scope: an unreferenced new export is dead', dead.some((d) => d.name === 'loadBands'), true);
+  check('audit-scope: a referenced export is not dead', dead.some((d) => d.name === 'Used'), false);
+  check('audit-scope: specs and migrations are never candidates', dead.some((d) => /spec|migrations/.test(d.file)), false);
+  check('audit-scope: a dead file does not also list its exports',
+    dead.filter((d) => d.file.endsWith('section-filter.ts')).length, 1);
+}
+
+// ------------------------------------------------------------ reuse detection
+console.log('reuse detection (rule of three)');
+
+const LOGIC = (v = 'rows', f = 'filterActive') => `
+export async function ${f}(repo, ${v}, schoolId) {
+	const result = [];
+	for (const item of ${v}) {
+		const found = await repo.findOne({ where: { id: item.id, schoolId } });
+		if (!found) {
+			throw new DomainError('error.not-found');
+		}
+		if (found.status !== 'ACTIVE') {
+			continue;
+		}
+		result.push({ id: found.id, name: found.name.trim() });
+	}
+	return result;
+}
+`;
+const allNew = (text) => new Set(text.split('\n').map((_, i) => i + 1));
+const clones = (target, others, file = 'backend/src/modules/a/b/core/b.functions.ts') =>
+  findClones({
+    targets: [{ file, text: target, addedNums: allNew(target) }],
+    corpus: others.map((text, i) => ({ file: `backend/src/modules/x/y${i}/core/y${i}.functions.ts`, text })),
+  });
+
+check('reuse: no other copy is no finding', clones(LOGIC(), []).length, 0);
+{
+  const one = clones(LOGIC(), [LOGIC()]);
+  check('reuse: one other copy is a tolerated pair', `${one[0]?.copies}/${one[0]?.verdict}`, '2/tolerated');
+  const two = clones(LOGIC(), [LOGIC(), LOGIC()]);
+  check('reuse: two other copies is the third — extract', `${two[0]?.copies}/${two[0]?.verdict}`, '3/extract');
+  check('reuse: the finding lists every location', two[0]?.locations.length, 3);
+  const many = clones(LOGIC(), [LOGIC(), LOGIC(), LOGIC(), LOGIC()]);
+  check('reuse: more copies keep counting', many[0]?.copies, 5);
+}
+{
+  const renamed = clones(LOGIC('rows', 'filterActive'), [LOGIC('items', 'pickActive'), LOGIC('list', 'keepActive')]);
+  check('reuse: renamed copies are found', `${renamed[0]?.copies}/${renamed[0]?.kind}`, '3/renamed');
+  const mixed = clones(LOGIC(), [LOGIC(), LOGIC('items', 'pickActive')]);
+  check('reuse: an exact copy makes the finding exact', mixed[0]?.kind, 'exact');
+}
+{
+  const unrelated = `
+export function total(list) {
+	let sum = 0;
+	for (const n of list) {
+		sum += n.amount * n.quantity;
+	}
+	return sum;
+}
+`;
+  check('reuse: different code is not a clone', clones(LOGIC(), [unrelated, unrelated]).length, 0);
+}
+{
+  // a window that overlaps no added line is not the diff's code
+  const target = LOGIC();
+  const found = findClones({
+    targets: [{ file: 'backend/src/modules/a/b/core/b.functions.ts', text: target, addedNums: new Set() }],
+    corpus: [{ file: 'backend/src/modules/x/y/core/y.functions.ts', text: LOGIC() }],
+  });
+  check('reuse: unchanged code is never reported', found.length, 0);
+}
+{
+  // existing scaffolding with one new line next to it is not the diff's copy
+  const target = LOGIC();
+  const lineCount = target.split('\n').length;
+  const one = findClones({
+    targets: [{ file: 'backend/src/modules/a/b/core/b.functions.ts', text: target, addedNums: new Set([3]) }],
+    corpus: [{ file: 'backend/src/modules/x/y/core/y.functions.ts', text: LOGIC() }],
+  });
+  check('reuse: one new line beside existing scaffolding is not a copy', one.length, 0);
+  const most = findClones({
+    targets: [{ file: 'backend/src/modules/a/b/core/b.functions.ts', text: target, addedNums: new Set(Array.from({ length: lineCount - 2 }, (_, i) => i + 2)) }],
+    corpus: [{ file: 'backend/src/modules/x/y/core/y.functions.ts', text: LOGIC() }],
+  });
+  check('reuse: a block that is mostly new is still found', most.length, 1);
+}
+{
+  const imports = `import {\n\tSwaggerCreate,\n\tSwaggerUpdate,\n\tSwaggerDelete,\n\tSwaggerGetAll,\n\tSwaggerGetById,\n\tSwaggerFilters,\n\tSwaggerMaintenance,\n\tSwaggerList,\n\tSwaggerRemove,\n} from './docs/x.swagger';\n`;
+  check('reuse: repeated multi-line imports are ignored', clones(imports + LOGIC('a', 'f1'), [imports, imports, imports]).length, 0);
+  check('reuse: tests are never compared', findClones({
+    targets: [{ file: 'backend/src/modules/a/b/core/b.functions.ts', text: LOGIC(), addedNums: allNew(LOGIC()) }],
+    corpus: [{ file: 'backend/src/modules/x/y/core/y.functions.spec.ts', text: LOGIC() }],
+  }).length, 0);
+  check('reuse: declarative kinds (dtos) are never compared', findClones({
+    targets: [{ file: 'backend/src/modules/a/b/model/b.dtos.ts', text: LOGIC(), addedNums: allNew(LOGIC()) }],
+    corpus: [{ file: 'backend/src/modules/x/y/model/y.dtos.ts', text: LOGIC() }],
+  }).length, 0);
+}
+{
+  const a = { file: 'backend/src/modules/a/api/a.service.ts', text: LOGIC(), addedNums: allNew(LOGIC()) };
+  const b = { file: 'backend/src/modules/b/api/b.service.ts', text: LOGIC(), addedNums: allNew(LOGIC()) };
+  const both = findClones({ targets: [a, b], corpus: [{ file: a.file, text: a.text }, { file: b.file, text: b.text }] });
+  check('reuse: a copy between two new files is one finding', `${both.length}/${both[0]?.copies}`, '1/2');
+  const self = findClones({ targets: [a], corpus: [{ file: a.file, text: a.text }] });
+  check('reuse: a file is not a copy of itself', self.length, 0);
+}
+{
+  // a block found in many places is a standardised template, not a missed reuse
+  const template = clones(LOGIC(), Array(13).fill(LOGIC()));
+  check('reuse: a block in more than 12 places is a template', `${template[0]?.copies}/${template[0]?.verdict}`, '14/template');
+  const twelve = clones(LOGIC(), Array(11).fill(LOGIC()));
+  check('reuse: 12 copies is still a finding, not yet a template', twelve[0]?.verdict, 'extract');
+  // code in different packages cannot share an extraction
+  const cross = findClones({
+    targets: [{ file: 'backend/src/modules/a/api/a.service.ts', text: LOGIC(), addedNums: allNew(LOGIC()) }],
+    corpus: [{ file: 'frontend/src/modules/a/hooks/useA.ts', text: LOGIC() }, { file: 'frontend/src/modules/b/hooks/useB.ts', text: LOGIC() }],
+  });
+  check('reuse: a copy in the other package is not a copy', cross.length, 0);
+  // interface members are declarations, not logic
+  const members = Array.from({ length: 14 }, (_, i) => `\tfield${i}: string;`).join('\n');
+  check('reuse: repeated interface members are ignored',
+    clones(`export interface A {\n${members}\n}`, [`export interface B {\n${members}\n}`, `export interface C {\n${members}\n}`]).length, 0);
+}
+check('reuse: comments and whitespace do not hide a copy', clones(LOGIC(), [LOGIC().replace(/\t/g, '    ').replace('const result', '// build it\n\tconst result')]).length, 1);
+
+// ------------------------------------------------------------ security scan
+console.log('security scan');
+
+const scan = (file, text, extra = {}) => scanSecurity({
+  added: new Map([[file, text.split('\n').map((t, i) => ({ n: i + 1, text: t }))]]),
+  readFile: () => extra.full ?? text,
+}).map((h) => h.rule);
+const C = 'backend/src/modules/a/b/api/b.controller.ts';
+const S = 'backend/src/modules/a/b/api/b.service.ts';
+
+check('security: schoolId from @Query is flagged', scan(C, "async f(@Query('schoolId') s: number) {}").includes('scope-from-request'), true);
+check('security: schoolId from @Body is flagged', scan(C, "f(@Body('schoolId') s) {}").includes('scope-from-request'), true);
+check('security: @SchoolId() header decorator is fine', scan(C, 'async f(@SchoolId() schoolId: number) {}').includes('scope-from-request'), false);
+check('security: a scope field in a DTO is flagged', scan('backend/src/modules/a/b/model/b.dtos.ts', '\tschoolId: number;').includes('scope-in-dto'), true);
+check('security: @Public() is flagged for confirmation', scan(C, '@Public()').includes('public-route'), true);
+check('security: @SkipPermissions() is flagged', scan(C, '@SkipPermissions()').includes('skip-permissions'), true);
+check('security: raw process.env is flagged', scan(S, 'const k = process.env.KEY;').includes('process-env'), true);
+check('security: process.env in a config file is allowed', scan('backend/src/commons/configs/env.config.ts', 'const k = process.env.KEY;').includes('process-env'), false);
+check('security: eval is flagged', scan(S, 'eval(userInput);').includes('dangerous-api'), true);
+check('security: md5 is flagged', scan(S, "createHash('md5')").includes('weak-crypto'), true);
+check('security: logging a token is flagged', scan(S, 'this.logger.log(`token ${token}`);').includes('log-sensitive'), true);
+check('security: tests are not scanned', scan('backend/src/modules/a/b/api/b.service.spec.ts', 'eval(x); process.env.A;').length, 0);
+check('security: an unscoped cache key is flagged', scan(S, 'const c = this.bandCache.get(courseId);').includes('cache-key-without-scope'), true);
+check('security: a scoped cache key is fine', scan(S, 'const c = this.bandCache.get(`${schoolId}:${courseId}`);').includes('cache-key-without-scope'), false);
+check('security: SQL built with a template literal is flagged', scan(S, 'await ds.query(`SELECT * FROM t WHERE id = ${id}`);').includes('sql-interpolation'), true);
+check('security: SQL built by concatenation is flagged', scan(S, "await ds.query('SELECT * FROM t WHERE id = ' + id);").includes('sql-interpolation'), true);
+check('security: parameterised SQL is fine', scan(S, "await ds.query('SELECT * FROM t WHERE id = $1', [id]);").includes('sql-interpolation'), false);
+check('security: a comma inside the SQL string does not fool it', scan(S, "await ds.query('SELECT a, b FROM t WHERE id = $1', [id]);").includes('sql-interpolation'), false);
+
+const CTRL = `import { Controller } from '@nestjs/common';
+
+@Controller('x')
+export class XController {
+	@Get(':id')
+	@RequirePermission({ module: M, action: A })
+	async ok() {}
+
+	@Post('go')
+	async unprotected() {}
+
+	@SwaggerXPublic()
+	@Public()
+	async open() {}
+
+	@Post('m2m')
+	@ApiTokenAuth()
+	@SkipPermissions()
+	async both() {}
+}
+`;
+{
+  const issues = findRouteAuthIssues({ text: CTRL, addedNums: allNew(CTRL) });
+  const by = (rule) => issues.filter((i) => i.rule === rule).map((i) => i.text);
+  check('security: a route with no auth decorator is flagged', by('route-without-permission').join(','), 'unprotected');
+  check('security: @RequirePermission and @Public routes pass', by('route-without-permission').includes('ok') || by('route-without-permission').includes('open'), false);
+  check('security: @ApiTokenAuth + @SkipPermissions is flagged', by('api-token-skip-permissions').join(','), 'both');
+  check('security: only routes the diff touched are reported',
+    findRouteAuthIssues({ text: CTRL, addedNums: new Set([1]) }).length, 0);
+  const classLevel = "@RequirePermission({ module: M, action: A })\nexport class YController {\n\t@Get()\n\tasync a() {}\n}\n";
+  check('security: a class-level permission covers its routes', findRouteAuthIssues({ text: classLevel, addedNums: allNew(classLevel) }).length, 0);
+  const swagger = "export class ZController {\n\t@SwaggerZCreate()\n\tasync create() {}\n}\n";
+  check('security: a Swagger-decorated method counts as an endpoint',
+    findRouteAuthIssues({ text: swagger, addedNums: allNew(swagger) }).map((i) => i.rule).join(','), 'route-without-permission');
+}
+// scope-param-unused: promoted from the audit ledger (an IDOR the auditor kept finding by hand)
+{
+  const unused = (src, nums) => findUnusedScopeParams({ text: src, addedNums: nums ?? allNew(src) }).map((i) => i.text);
+  check('scope-param-unused: an accepted, dropped schoolId is flagged',
+    unused('class S {\n\tasync getRoster(id: number, schoolId: number) {\n\t\treturn this.repo.findRoster(id);\n\t}\n}').join(), 'getRoster(… schoolId …)');
+  check('scope-param-unused: a used schoolId is fine',
+    unused('class S {\n\tasync getRoster(id: number, schoolId: number) {\n\t\treturn this.repo.findRoster(id, schoolId);\n\t}\n}').length, 0);
+  check('scope-param-unused: shorthand `{ schoolId }` counts as use',
+    unused('class S {\n\tasync f(schoolId: number) {\n\t\treturn this.repo.find({ where: { schoolId } });\n\t}\n}').length, 0);
+  // regression: braces in the return type must not be mistaken for the body
+  check('scope-param-unused: a Promise<{ … }> return type does not hide the real body',
+    unused('class S {\n\tasync get(\n\t\tid: number,\n\t\tschoolId: number,\n\t): Promise<{ rows: number[] }> {\n\t\tconst ctx = await this.load(id, schoolId);\n\t\treturn ctx;\n\t}\n}').length, 0);
+  // regression: a multi-line call is not a declaration
+  check('scope-param-unused: a call spanning lines is not a function',
+    unused('class S {\n\tasync f() {\n\t\treturn this.pdf.build(\n\t\t\ttoRequester(principal, schoolId),\n\t\t\tid,\n\t\t\t{ lang },\n\t\t);\n\t}\n}').length, 0);
+  check('scope-param-unused: a decorated controller param that is never passed on is flagged',
+    unused('class C {\n\t@Get()\n\tasync run(\n\t\t@Body() dto: D,\n\t\t@AcademicPeriodId() academicPeriodId: number,\n\t) {\n\t\treturn this.svc.run(dto);\n\t}\n}').join(), 'run(… academicPeriodId …)');
+  check('scope-param-unused: a declaration with no body is ignored', unused('interface R {\n\tfind(id: number, schoolId: number): void;\n}').length, 0);
+  check('scope-param-unused: a signature the diff did not touch is not reported',
+    unused('class S {\n\tasync f(id: number, schoolId: number) {\n\t\treturn 1;\n\t}\n}', new Set([99])).length, 0);
+  check('scope-param-unused: the scanner reports it on services',
+    scan('backend/src/modules/a/b/api/b.service.ts', 'async getRoster(id: number, schoolId: number) {\n\treturn this.repo.findRoster(id);\n}').includes('scope-param-unused'), true);
+}
+check('security: addedLines numbers lines from the hunk header',
+  addedLines('+++ b/x.ts\n@@ -1,0 +10,2 @@\n+a\n+b\n').get('x.ts').map((l) => l.n).join(','), '10,11');
+
+// ------------------------------------------------------------- audit ledger
+console.log('audit ledger');
+
+const MECH = { area: 'security', source: 'mechanical', rule: 'cache-key-without-scope', category: 'scope-leak', severity: 'blocker', verdict: 'confirmed', file: 'a.service.ts', line: 31, summary: 'cache keyed by courseId only' };
+const JUDG = { area: 'security', source: 'judgment', category: 'idor', severity: 'major', verdict: 'confirmed', file: 'b.controller.ts', line: 12,
+  summary: 'roster returned by section id without a school check', pattern: 'controller returns a row by :id without passing the school to the repository',
+  detect: 'route param :id flows into repository.findOne with no schoolId argument', convertible: 'medium' };
+const errs = (r) => validateRecord(r);
+
+check('ledger: a mechanical confirmed record is valid', errs(MECH).length, 0);
+check('ledger: a mechanical false positive with a reason is valid',
+  errs({ ...MECH, verdict: 'false-positive', severity: undefined, reason: 'the cached data is global' }).length, 0);
+check('ledger: a judgment record is valid', errs(JUDG).length, 0);
+check('ledger: an unknown field is rejected (a typo must not vanish)', errs({ ...MECH, servrity: 'x' }).some((e) => /unknown field "servrity"/.test(e)), true);
+check('ledger: a mechanical record needs its rule', errs({ ...MECH, rule: undefined }).some((e) => /rule is required/.test(e)), true);
+check('ledger: a judgment record needs the code shape', errs({ ...JUDG, pattern: undefined }).some((e) => /pattern is required/.test(e)), true);
+check('ledger: a judgment record needs a detection note', errs({ ...JUDG, detect: '' }).some((e) => /detect is required/.test(e)), true);
+check('ledger: a judgment record needs a convertibility estimate', errs({ ...JUDG, convertible: 'maybe' }).some((e) => /convertible must be/.test(e)), true);
+check('ledger: a judgment record cannot carry a rule', errs({ ...JUDG, rule: 'x' }).some((e) => /no rule/.test(e)), true);
+check('ledger: a judgment finding cannot be a false positive', errs({ ...JUDG, verdict: 'false-positive', reason: 'r' }).some((e) => /only a mechanical hit/.test(e)), true);
+check('ledger: a false positive must say why', errs({ ...MECH, verdict: 'false-positive' }).some((e) => /reason is required/.test(e)), true);
+check('ledger: a confirmed finding needs a severity', errs({ ...MECH, severity: undefined }).some((e) => /severity must be/.test(e)), true);
+check('ledger: an invalid category is rejected', errs({ ...MECH, category: 'vibes' }).some((e) => /category must be/.test(e)), true);
+check('ledger: line must be a positive integer', errs({ ...MECH, line: 0 }).some((e) => /line must be/.test(e)), true);
+check('ledger: a non-object is rejected', errs('x').length, 1);
+
+{
+  const rec = (o, i = 0) => ({ v: 1, date: `2026-0${1 + (i % 6)}-10`, branch: `feat/b${i}`, ...o });
+  // rule precision: 8 hits, 2 wrong = 75% (healthy); 6 hits, 3 wrong = 50% (watch); 3 hits = too few
+  const many = (rule, ok, bad) => [
+    ...Array.from({ length: ok }, (_, i) => rec({ ...MECH, rule }, i)),
+    ...Array.from({ length: bad }, (_, i) => rec({ ...MECH, rule, verdict: 'false-positive', severity: undefined, reason: `reason ${i}` }, i)),
+  ];
+  const agg = aggregate([...many('healthy-rule', 6, 2), ...many('watch-rule', 3, 3), ...many('noisy-rule', 1, 4), ...many('rare-rule', 2, 1)]);
+  const advice = (r) => agg.rules.find((x) => x.rule === r).advice;
+  check('ledger report: a mostly-right rule is healthy', advice('healthy-rule'), 'healthy');
+  check('ledger report: a half-wrong rule is on watch', advice('watch-rule'), 'watch: a third of its hits are wrong');
+  check('ledger report: a mostly-wrong rule is called noisy', advice('noisy-rule'), 'noisy: tighten the rule');
+  check('ledger report: too few hits to judge a rule', advice('rare-rule'), 'too few hits to judge');
+  check('ledger report: precision is confirmed / hits', agg.rules.find((r) => r.rule === 'healthy-rule').precision, 0.75);
+
+  // judgment grouping and promotion
+  const idor = (extra = {}, i = 0) => rec({ ...JUDG, ...extra }, i);
+  const g2 = aggregate([idor({}, 0), idor({ pattern: 'a controller returns a row by :id and never passes the school to the repository' }, 1)]);
+  check('ledger report: the same shape in different words is one group', g2.judgment.length, 1);
+  check('ledger report: a recurring, convertible shape is promoted', g2.judgment[0].recommendation, 'promote to a mechanical rule');
+  check('ledger report: the group counts its occurrences', g2.judgment[0].count, 2);
+  const once = aggregate([idor()]);
+  check('ledger report: seen once is only watched', once.judgment[0].recommendation, 'seen once: keep watching');
+  const blocker = aggregate([idor({ severity: 'blocker' })]);
+  check('ledger report: a single blocker that a rule could catch is promoted', blocker.judgment[0].recommendation, 'promote to a mechanical rule');
+  const hard = aggregate([idor({ convertible: 'low' }, 0), idor({ convertible: 'low' }, 1)]);
+  check('ledger report: recurring but unconvertible stays judgment', hard.judgment[0].recommendation, 'recurring, but hard to detect: keep as judgment');
+  const apart = aggregate([idor({}, 0), idor({ category: 'ssrf', pattern: 'fetches a caller-supplied url without an allowlist' }, 1)]);
+  check('ledger report: different categories never merge', apart.judgment.length, 2);
+  check('ledger report: dropped mechanical hits are not judgment groups', aggregate(many('r', 0, 3)).judgment.length, 0);
+  // re-auditing one branch is one observation; recurrence means different changes
+  const rerun = aggregate([rec({ ...JUDG, severity: 'major' }, 0), rec({ ...JUDG, severity: 'major' }, 0), rec({ ...JUDG, severity: 'major' }, 0)]);
+  check('ledger report: reruns on one branch do not make a gap look recurrent', `${rerun.judgment[0].count}/${rerun.judgment[0].recommendation}`, '1/seen once: keep watching');
+  const dup = aggregate([...many('r', 6, 0), ...many('r', 6, 0)]);
+  check('ledger report: the same hit recorded twice counts once', dup.rules[0].hits, 6);
+  // two real phrasings of the same IDOR, from two runs of the audit on the fixture
+  const phrasing = aggregate([
+    rec({ ...JUDG, branch: 'feat/x', pattern: 'service/repository method receives schoolId param but the SQL has no school_id predicate', detect: 'param named schoolId unused in function body' }, 0),
+    rec({ ...JUDG, branch: 'feat/y', pattern: 'service method receives schoolId but the repository query takes only a record id', detect: 'needs judgment' }, 1),
+  ]);
+  check('ledger report: differently worded IDORs cluster', `${phrasing.judgment.length}/${phrasing.judgment[0].count}`, '1/2');
+  const md = renderReport(g2);
+  check('ledger report: the markdown names what to promote', /Promote to mechanical rules \(1\)/.test(md), true);
+  check('ledger report: the markdown carries the detection idea', md.includes('repository.findOne with no schoolId'), true);
+  check('ledger report: an empty ledger says so', /None yet/.test(renderReport(aggregate([]))), true);
+}
+
+// the CLI, end to end in a real repo
+{
+  const dir = gitRepo('abet-ledger-');
+  spawnSync('git', ['commit', '--allow-empty', '-q', '-m', 'chore: init'], { cwd: dir });
+  spawnSync('git', ['checkout', '-q', '-b', 'fix/scope-bug'], { cwd: dir });
+  const ledger = (args, input) => spawnSync(process.execPath, [join(HOOKS, '..', 'scripts', 'audit-ledger.mjs'), ...args], { cwd: dir, input, encoding: 'utf8' });
+
+  const bad = ledger(['add'], JSON.stringify([MECH, { ...JUDG, pattern: undefined }]));
+  check('ledger cli: an invalid record fails the whole batch', bad.status, 1);
+  check('ledger cli: the error names the record and the field', /record 2: pattern is required/.test(bad.stderr), true);
+  check('ledger cli: nothing is written when any record is invalid', existsSync(join(dir, 'openspec')), false);
+  check('ledger cli: bad JSON is reported', ledger(['add'], 'not json').status, 1);
+
+  const ok = ledger(['add'], JSON.stringify([MECH, JUDG]));
+  check('ledger cli: valid records are appended', JSON.parse(ok.stdout).appended, 2);
+  const file = join(dir, 'openspec', 'audit-ledger', 'scope-bug.jsonl');
+  check('ledger cli: with no change folder it uses the bug-lane ledger', existsSync(file), true);
+  const lines = readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  check('ledger cli: each line is stamped with version, branch and sha', `${lines[0].v}/${lines[0].branch}/${lines[0].sha?.length > 0}`, '1/fix/scope-bug/true');
+
+  spawnSync('git', ['checkout', '-q', '-b', 'feat/with-change'], { cwd: dir });
+  mkdirSync(join(dir, 'openspec', 'changes', 'with-change'), { recursive: true });
+  ledger(['add'], JSON.stringify(JUDG));
+  check('ledger cli: with a change folder it lives beside the change', existsSync(join(dir, 'openspec', 'changes', 'with-change', 'audit.jsonl')), true);
+
+  // the review lane: someone else's PR gets its own file and never touches the change folder
+  const noPr = ledger(['add', '--lane', 'review'], JSON.stringify(JUDG));
+  check('ledger cli: a review needs the PR number', `${noPr.status}/${/needs --pr/.test(noPr.stderr)}`, '1/true');
+  check('ledger cli: an unknown lane is rejected', ledger(['add', '--lane', 'x'], JSON.stringify(JUDG)).status, 1);
+  const rv = ledger(['add', '--lane', 'review', '--pr', '42'], JSON.stringify([JUDG]));
+  const reviewFile = join(dir, 'openspec', 'audit-ledger', 'review-42.jsonl');
+  check('ledger cli: a review is recorded per PR', `${rv.status}/${existsSync(reviewFile)}`, '0/true');
+  const rvLine = JSON.parse(readFileSync(reviewFile, 'utf8').trim());
+  check('ledger cli: a review record is stamped with its lane and PR', `${rvLine.lane}/${rvLine.pr}`, 'review/42');
+  check('ledger cli: a review does not write into the change folder',
+    readFileSync(join(dir, 'openspec', 'changes', 'with-change', 'audit.jsonl'), 'utf8').trim().split('\n').length, 1);
+
+  const rep = ledger(['report']);
+  check('ledger cli: report reads every ledger', /4 findings across 2 branch/.test(rep.stdout), true);
+  check('ledger cli: report separates own audits from peer reviews', /own audits 3, peer reviews 1/.test(rep.stdout), true);
+  const json = JSON.parse(ledger(['report', '--json']).stdout);
+  check('ledger cli: report --json is machine-readable', json.bySource.judgment, 3);
+  writeFileSync(file, readFileSync(file, 'utf8') + 'not json\n');
+  check('ledger cli: a corrupt line is skipped, not fatal', JSON.parse(ledger(['report', '--json']).stdout).malformed, 1);
+  rmSync(dir, { recursive: true, force: true });
 }
 
 // ----------------------------------------------------------------- report
