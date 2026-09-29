@@ -19,6 +19,7 @@
   "files": [
     "shared/hooks",
     "shared/reference",
+    "shared/scripts",
     "shared/rules",
     "shared/templates",
     "README.md"
