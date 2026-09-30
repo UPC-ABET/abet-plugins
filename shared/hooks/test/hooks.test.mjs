@@ -647,6 +647,8 @@ check('naming: a service in model/ is rejected', named(`${M}/model/course-sectio
 check('naming: controller at the module root is rejected', named(`${M}/course-sections.controller.ts`), 'bad');
 check('naming: kind-less file is rejected', named(`${M}/core/helpers.ts`), 'bad');
 check('naming: camelCase name is rejected', named(`${M}/core/courseSections.functions.ts`), 'bad');
+check('naming: db-spec beside its repository is accepted', named(`${M}/core/course-sections.repository.db-spec.ts`), 'ok');
+check('naming: db-spec of an unknown kind is rejected', named(`${M}/core/course-sections.bands.db-spec.ts`), 'bad');
 check('naming: spec of an unknown kind is rejected', named(`${M}/core/course-sections.bands.spec.ts`), 'bad');
 check('naming: message names the offending kind',
   checkModuleFileName(`${M}/core/course-sections.bands.ts`).includes('.bands.ts'), true);

@@ -51,7 +51,8 @@ Every feature module has the same shape — `api/` (controller, service, docs/sw
 
 ### File names inside a module
 
-Every file is `<kebab-name>.<kind>.ts` (tests: `<kebab-name>.<kind>.spec.ts`), and the
+Every file is `<kebab-name>.<kind>.ts` (tests: `<kebab-name>.<kind>.spec.ts`; tests that need a real database:
+`<kebab-name>.<kind>.db-spec.ts`, which lives beside the file it tests), and the
 `<kind>` decides the folder. **Do not invent a kind** — `course-sections.bands.ts` or
 `course-sections.section-filter.ts` is wrong; the helper is `core/course-sections.functions.ts`.
 

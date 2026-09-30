@@ -1,7 +1,7 @@
 /**
  * File-naming gate for backend feature modules.
  *
- * Every file under `src/modules/` is `<kebab-name>.<kind>.ts` (or `.<kind>.spec.ts`), and
+ * Every file under `src/modules/` is `<kebab-name>.<kind>.ts` (or `.<kind>.spec.ts` / `.<kind>.db-spec.ts`), and
  * each `<kind>` lives in exactly one folder — `.service.ts` in `api/`, `.repository.ts` in
  * `core/`, and so on (see `rules/backend.md`, "Where things go"). A model asked to add
  * "some helper" will happily invent `course-sections.bands.ts` or `.section-filter.ts`;
@@ -95,13 +95,13 @@ export function checkModuleFileName(path) {
   const layer = layerOf(segments.slice(1));
 
   const parts = file.slice(0, -'.ts'.length).split('.');
-  const isSpec = parts.at(-1) === 'spec';
-  if (isSpec) parts.pop();
+  const suffix = ['spec', 'db-spec'].includes(parts.at(-1)) ? parts.at(-1) : null;
+  if (suffix) parts.pop();
   const [name, kind, ...extra] = parts;
 
   const allowedHere = Object.entries(KIND_FOLDERS)
     .filter(([, folders]) => folders.includes(layer) || folders.includes('*')).map(([k]) => k);
-  const expected = `\`<name>.<kind>${isSpec ? '.spec' : ''}.ts\``;
+  const expected = `\`<name>.<kind>${suffix ? `.${suffix}` : ''}.ts\``;
   const where = layer === '.' ? 'the module root' : `\`${layer}/\``;
 
   if (!name || !kind || extra.length > 0 || !NAME.test(name)) {
