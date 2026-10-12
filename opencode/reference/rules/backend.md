@@ -89,6 +89,7 @@ has exactly one folder**, and the kind decides it:
 | `crypto` | `core/` | hashing, encryption, key material |
 | `client` | `core/` | outbound HTTP/SDK wrappers for external systems |
 | `store` | `core/` | in-memory/state stores |
+| `concurrency` | `core/` | bounded-concurrency primitives — permit gates, limiter wrappers (`p-limit`), worker pools. No domain logic, no I/O beyond scheduling the work it is handed |
 | `entity` | `model/` | TypeORM entities |
 | `dtos` | `model/` | request/response DTO classes |
 | `types` | `model/` | TS types/interfaces shared inside the module |
@@ -127,7 +128,7 @@ and only app-wide config lives in `commons/configs/` — the same split as modul
 | `commons/configs/` | app-wide `config` (`env.config.ts`, `db.config.ts`, `naming-strategy.config.ts`) |
 | `commons/filters/` | `filter` — the global exception filter. This kind has no home inside a module |
 | `commons/interceptors/` | app-wide `interceptor`s (a module's own interceptor stays in its `interceptors/`) |
-| `libs/<topic>/` | cross-module `calc`, `mapper`, `sql`, `builder`, `cache`, `http`, `crypto`, `client`, plus `service`/`module` for an injectable lib (`encrypt`), plus the lib's own `types`, `theme` and `messages` next to the code they serve. Every file in a topic folder (`libs/reporting/`, `libs/excel/`, `libs/chart/`) — no new loose files at the `libs/` root, and no `libs/strings/` |
+| `libs/<topic>/` | cross-module `calc`, `mapper`, `sql`, `builder`, `cache`, `http`, `crypto`, `client`, `concurrency` (`libs/concurrency/`), plus `service`/`module` for an injectable lib (`encrypt`), plus the lib's own `types`, `theme` and `messages` next to the code they serve. Every file in a topic folder (`libs/reporting/`, `libs/excel/`, `libs/chart/`) — no new loose files at the `libs/` root, and no `libs/strings/` |
 | `shared/` | cross-module `constants` and `types` only |
 
 `database/`, `tools/`, `main.ts` and `app.*` are outside the standard.
@@ -136,7 +137,7 @@ and only app-wide config lives in `commons/configs/` — the same split as modul
 
 | Name | Instead |
 | --- | --- |
-| `.functions.ts` | retired — name it for what it is: maps a shape → `mapper`; computes a value → `calc`; builds a file/document → `builder`; SQL text → `sql`; translates/creates errors → `errors`; cache keys → `cache`; headers/cookies/streams → `http`; hashing/encryption → `crypto`; touches the DB → a repository method |
+| `.functions.ts` | retired — name it for what it is: maps a shape → `mapper`; computes a value → `calc`; builds a file/document → `builder`; SQL text → `sql`; translates/creates errors → `errors`; cache keys → `cache`; headers/cookies/streams → `http`; hashing/encryption → `crypto`; bounds how much work runs at once → `concurrency`; touches the DB → a repository method |
 | `.utils.ts`, `.util.ts`, `.helpers.ts`, `.helper.ts`, `.common.ts`, `.misc.ts` | the same decision tree |
 | `.transforms.ts` | `mapper` |
 | `.dto.ts`, `.configs.ts` | `dtos`, `config` (the legacy `error` kind is still accepted; new files use `errors`) |

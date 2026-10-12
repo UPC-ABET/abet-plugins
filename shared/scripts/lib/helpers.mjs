@@ -24,7 +24,7 @@ const TOP_LEVEL_DECL = /^(?:export\s+)?(?:default\s+)?(?:abstract\s+)?(?:async\s
 const FUNCTION_DECL = /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/;
 const DYNAMIC_IMPORT = /\bimport\(\s*['"]([^./'"][^'"]*)['"]\s*\)/g;
 const LOCK_TIMEOUT = /set_config\(\s*'lock_timeout'/;
-const RUNTIME_LOGIC = /\.(sql|repository|functions|service|validation|controller|calc|mapper|builder|cache|http|policy|job)\.ts$/;
+const RUNTIME_LOGIC = /\.(sql|repository|functions|service|validation|controller|calc|mapper|builder|cache|http|concurrency|policy|job)\.ts$/;
 const TX_OVERRIDE =/^\s*(?:(?:public|protected|private|override|async)\s+)*runInTransaction\s*[<(]/;
 
 /**

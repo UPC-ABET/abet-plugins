@@ -632,7 +632,7 @@ const nameMsg = (path) => checkFileName(path) ?? '';
 const HOME = {
   controller: 'api', service: 'api', http: 'api', swagger: 'api/docs',
   repository: 'core', sql: 'core', validation: 'core', calc: 'core', mapper: 'core', builder: 'core',
-  theme: 'core', cache: 'core', crypto: 'core', client: 'core', store: 'core', job: 'core', policy: 'core', event: 'core',
+  theme: 'core', cache: 'core', crypto: 'core', client: 'core', store: 'core', concurrency: 'core', job: 'core', policy: 'core', event: 'core',
   entity: 'model', dtos: 'model', types: 'model', labels: 'model', errors: 'model', error: 'model',
   routes: 'config', constants: 'config', messages: 'config/strings',
   module: '.', config: '.',
@@ -737,6 +737,18 @@ for (const f of ['constants/app.constants.ts', 'types/i18n.types.ts', 'role-code
   check(`naming: shared/${f} is accepted`, named(`backend/src/shared/${f}`), 'ok');
 }
 check('naming: an unsuffixed shared constant is rejected', named('backend/src/shared/constants/mime-types.ts'), 'bad');
+
+// concurrency: core/ inside a module, libs/<topic>/ across modules, nowhere else
+check('naming: core/x.concurrency.ts is accepted', named(`${M}/core/course-sections.concurrency.ts`), 'ok');
+for (const f of ['concurrency-gate', 'concurrency-limit', 'process-concurrently']) {
+  check(`naming: libs/concurrency/${f}.concurrency.ts is accepted`, named(`backend/src/libs/concurrency/${f}.concurrency.ts`), 'ok');
+}
+for (const p of [`${M}/api/x.concurrency.ts`, `${M}/model/x.concurrency.ts`, 'backend/src/commons/x.concurrency.ts',
+  'backend/src/shared/x.concurrency.ts', 'backend/src/shared/concurrency/x.concurrency.ts', 'backend/src/libs/x.concurrency.ts']) {
+  check(`naming: ${p} is rejected`, named(p), 'bad');
+}
+check('naming: a concurrency in commons points at libs', nameMsg('backend/src/commons/x.concurrency.ts').includes('src/libs/'), true);
+check('naming: the decision tree names concurrency', nameMsg(`${M}/core/x.functions.ts`).includes('.concurrency.ts'), true);
 check('naming: a service in shared/ is rejected', named('backend/src/shared/x.service.ts'), 'bad');
 
 // out of scope

@@ -128,7 +128,9 @@ kind vocabulary — every backend kind with its one folder, `commons/` / `libs/`
 the frontend `mappers/` and `utils/` — lives in the stack rules (`rules/backend.md` and
 `rules/frontend.md`, "Where things go"), and must match each package's `POLICIES.md`
 word for word on kind names. When a task names a new file, it uses that vocabulary:
-`core/<name>.calc.ts`, never `.functions.ts` or `.utils.ts`. The naming gate refuses new paths that break it, and
+`core/<name>.calc.ts`, never `.functions.ts` or `.utils.ts`. Code that bounds how much work
+runs at once (permit gates, `p-limit` wrappers, worker pools) is `core/<name>.concurrency.ts`,
+or `libs/concurrency/` when two modules use it — never in `commons/` or `shared/`. The naming gate refuses new paths that break it, and
 the db-access check refuses database calls outside a repository.
 
 ## Changes spanning backend and frontend

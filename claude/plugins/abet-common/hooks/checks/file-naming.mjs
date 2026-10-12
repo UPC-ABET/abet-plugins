@@ -39,6 +39,7 @@ export const KIND_FOLDERS = {
   crypto: 'core',
   client: 'core',
   store: 'core',
+  concurrency: 'core',
   // reserved: accepted now, documented as "use when first needed"
   job: 'core',
   policy: 'core',
@@ -68,7 +69,7 @@ const INTERFACE_KINDS = new Set(['repository', 'service']);
  * The one home of each cross-module kind outside the modules. A lib's own `types`, `theme`
  * and `messages` sit in its topic folder, next to the code they serve.
  */
-const LIBS_CODE = ['calc', 'mapper', 'sql', 'builder', 'cache', 'http', 'crypto', 'client', 'service', 'module'];
+const LIBS_CODE = ['calc', 'mapper', 'sql', 'builder', 'cache', 'http', 'crypto', 'client', 'concurrency', 'service', 'module'];
 export const LIBS_KINDS = [...LIBS_CODE, 'types', 'theme', 'messages'];
 /**
  * `src/commons/` folder → the kinds it holds; `.` is the commons root, which also holds the
@@ -100,7 +101,7 @@ const FUNCTIONS_TREE =
   '`core/<name>.calc.ts`; builds a file/document/token → `core/<name>.builder.ts`; SQL text → ' +
   '`core/<name>.sql.ts`; translates or creates errors → `model/<name>.errors.ts`; cache keys → ' +
   '`core/<name>.cache.ts`; headers/cookies/streams → `api/<name>.http.ts`; hashing/encryption → ' +
-  '`core/<name>.crypto.ts`; touches the database → a method on `core/<name>.repository.ts`. ' +
+  '`core/<name>.crypto.ts`; bounds how much work runs at once → `core/<name>.concurrency.ts`; touches the database → a method on `core/<name>.repository.ts`. ' +
   'Used by 2+ modules → the same kind in `src/libs/<topic>/`.';
 
 /** Retired or misspelled kinds → what to write instead. */
