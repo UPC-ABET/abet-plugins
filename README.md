@@ -316,13 +316,30 @@ change reads or counts, the proposal says whether its rows can belong to several
 and where they can, the aggregate filters by the caller's school and has its own acceptance
 criterion. A count over another school's students is that school's data leaking as a number.
 
-### Module file names are checked by code
+### File names and database access are checked by code
 
-Files under `backend/src/modules/` are `<name>.<kind>.ts`, and the kind fixes the folder
-(table in `rules/backend.md`). `file-name-guard` denies creating a file with an invented
-kind (`.bands.ts`, `.section-filter.ts`) the moment the model tries, and the pre-commit
-gate checks newly added files for Codex, opencode and humans. Only **new** files are
-checked, so legacy files never block a commit. `ABET_SKIP_NAMING=1` bypasses the gate.
+A file name says what the file is for, never how it is written: one role per file (the
+ACC-SYS file-naming standard v2). Backend files are `<name>.<kind>.ts` and **every kind has
+exactly one folder** — `service` in `api/`, `calc`, `mapper`, `builder`, `sql` and
+`repository` in `core/`, `messages` in `config/strings/`, and so on (table in
+`rules/backend.md`). `commons/`, `libs/<topic>/` and `shared/` are each the one home of a
+fixed set of cross-module kinds. `.functions.ts`, `.utils.ts`, `.helpers.ts`,
+`.transforms.ts`, backend barrels and re-export-only files are refused, with a hint that
+says which kind to use instead. On the frontend, `*Utils.ts` / `*Helpers.ts` names and
+`helpers/` folders are refused, and mappings go in `mappers/<thing>Mapper.ts`.
+
+`file-name-guard` denies a bad name the moment the model tries to create it, and the
+pre-commit gate checks new paths — renames included, so a `git mv` wave must land on
+allowed kinds — for Codex, opencode and humans. Legacy files are grandfathered: editing
+them never blocks, but `/abet-audit-pr` reports a grandfathered kind the diff grew, and a
+large file holding several roles. `ABET_SKIP_NAMING=1` bypasses the gate.
+
+The same gate blocks **database access outside a repository** on the lines a commit adds: a
+value import of `DataSource` / `EntityManager` / `QueryRunner`, or a `.query(`,
+`.createQueryBuilder(`, `.getRepository(` or `.transaction(` call anywhere but a
+`*.repository.ts`, the `commons/` transaction runner, tests, `database/` and `tools/`
+(`checks/db-access.mjs`; `ABET_SKIP_DB_ACCESS=1` bypasses it). `/abet-audit-pr` and
+`/abet-review-pr` report the same hits as a policy violation.
 
 ### Security and reuse: scripts are the floor, the model explores above it
 
@@ -398,8 +415,8 @@ and Windows, and node is already a dependency of the consuming repo.
 │   ├── rules/{backend,frontend}.md
 │   ├── reference/conventions.md
 │   └── hooks/
-│       ├── checks/{commit-message,pre-commit}.mjs       the policy
-│       ├── lib/{shell,hook,branches,toolchain,secrets}.mjs
+│       ├── checks/{commit-message,pre-commit,file-naming,db-access}.mjs   the policy
+│       ├── lib/{shell,hook,branches,toolchain,secrets,diff}.mjs
 │       ├── {push-guard,commit-msg-validator,…}.mjs      PreToolUse adapters
 │       ├── cli.mjs                                      git-hook entry point
 │       └── test/hooks.test.mjs

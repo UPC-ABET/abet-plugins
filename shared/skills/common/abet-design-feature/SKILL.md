@@ -148,6 +148,10 @@ checkbox rule in `reference/conventions.md`. This is not optional formatting.
 
 Each task states its **Files** (with modify/create/test marked), its **Steps** in TDD
 order with the exact command to run, and its proposed **Commit** subject.
+Every new file in **Files** is named by its kind, which decides its one folder (the kind
+table in the stack rules: `core/<name>.calc.ts`, `core/<name>.mapper.ts`, ... — never
+`.functions.ts`, `.utils.ts` or a frontend `*Helpers.ts`). A planned name the gate would
+refuse is a plan that fails at the first commit.
 
 The preamble is addressed to whoever executes it, and carries the repo's execution
 rules: how tests are run, what must not be run, and that commits are never autonomous.

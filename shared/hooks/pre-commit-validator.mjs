@@ -6,8 +6,8 @@
  * `pre-commit` hook, so a developer on Codex or opencode gets the same enforcement.
  * This file only translates between the PreToolUse envelope and that check.
  *
- * Env switches: ABET_SKIP_PRECOMMIT, ABET_SKIP_FORMAT, ABET_SKIP_LINT,
- * ABET_SKIP_TYPECHECK, ABET_SKIP_TESTS, ABET_FULL_TESTS (all `=1`).
+ * Env switches: ABET_SKIP_PRECOMMIT, ABET_SKIP_NAMING, ABET_SKIP_DB_ACCESS, ABET_SKIP_FORMAT,
+ * ABET_SKIP_LINT, ABET_SKIP_TYPECHECK, ABET_SKIP_TESTS, ABET_FULL_TESTS (all `=1`).
  */
 import { readInput, deny, warn, allow, run, bashCommand } from './lib/hook.mjs';
 import { gitInvocations, gitCommandCwd } from './lib/shell.mjs';

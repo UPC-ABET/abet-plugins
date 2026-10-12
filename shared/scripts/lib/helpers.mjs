@@ -24,7 +24,7 @@ const TOP_LEVEL_DECL = /^(?:export\s+)?(?:default\s+)?(?:abstract\s+)?(?:async\s
 const FUNCTION_DECL = /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/;
 const DYNAMIC_IMPORT = /\bimport\(\s*['"]([^./'"][^'"]*)['"]\s*\)/g;
 const LOCK_TIMEOUT = /set_config\(\s*'lock_timeout'/;
-const RUNTIME_LOGIC = /\.(sql|repository|functions|service|validation|controller)\.ts$/;
+const RUNTIME_LOGIC = /\.(sql|repository|functions|service|validation|controller|calc|mapper|builder|cache|http|policy|job)\.ts$/;
 const TX_OVERRIDE =/^\s*(?:(?:public|protected|private|override|async)\s+)*runInTransaction\s*[<(]/;
 
 /**
@@ -70,7 +70,7 @@ const elsewhere = (set, file) => [...(set ?? [])].filter((f) => f !== file && pa
 
 /**
  * Run every rule over the diff's added lines.
- *   added:  Map<file, [{n, text}]>   (lib/diff.mjs → addedLines)
+ *   added:  Map<file, [{n, text}]>   (hooks/lib/diff.mjs → addedLines)
  *   index:  buildIndex() over the repository
  */
 export function findHelperReuse({ added, index }) {

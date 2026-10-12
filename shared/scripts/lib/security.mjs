@@ -407,7 +407,7 @@ export function findDtoIssues({ text, addedNums }) {
 
 /**
  * Run every rule over the diff's added lines.
- *   added:     Map<file, [{n, text}]>          (lib/diff.mjs → addedLines)
+ *   added:     Map<file, [{n, text}]>          (hooks/lib/diff.mjs → addedLines)
  *   readFile:  (file) => string | null          full text, for the route checks
  */
 export function scanSecurity({ added, readFile }) {
@@ -445,7 +445,7 @@ export function scanSecurity({ added, readFile }) {
       from = start;
     }
 
-    if (/\.(service|repository|functions|controller)\.ts$/.test(file)) {
+    if (/\.(service|repository|functions|controller|calc|mapper|sql|builder|cache|http|policy)\.ts$/.test(file)) {
       const full = readFile(file);
       if (full) {
         const nums = new Set(lines.map((l) => l.n));

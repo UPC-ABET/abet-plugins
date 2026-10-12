@@ -78,15 +78,20 @@ the task's own test command and report the result.
    what you searched for and what you reused; the audit now checks these by name
    (`reuse.helpers`), so a miss here comes back as a finding.
    If the logic you need already exists in **two** other places, your copy would be the
-   third — extract it into one shared home (a function in `core/<module>.functions.ts`, or
-   `libs/` when it crosses modules; a service or repository method; on the frontend a
-   shared hook or component) and point all three at it, in this change. The audit counts
+   third — extract it into one shared home (a file of the kind it is for, such as
+   `core/<module>.calc.ts` or `core/<module>.mapper.ts`, or the same kind in `libs/<topic>/`
+   when it crosses modules; a service or repository method; on the frontend a shared hook,
+   component or `utils/<functionName>.ts`) and point all three at it, in this change. The audit counts
    copies across the repo and reports a third one as major; it is far cheaper to extract
    now than to be sent back.
 3. Implement the minimum that makes it pass. On the backend, keep the stack rules audits
    most often find broken: every route on the entity takes the same scope as its siblings, every
    DTO integer has `@Max` and every array `@ArrayMaxSize`, log text goes through
    `JSON.stringify`, and no `err.message` reaches a response. The stack rules file says why.
+   Name every new file for what it is for — one role per file, the kind deciding its one
+   folder (the kind table in the stack rules; never `.functions.ts`, `.utils.ts` or
+   `*Helpers.ts`) — and keep every database call in the repository. The pre-commit gate
+   refuses both, so a wrong name or a stray `.query(` costs a rename later.
 4. Re-run. Green.
 5. Run the surrounding suite for that module to catch collateral damage.
 

@@ -16,12 +16,15 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isMain } from './lib/is-main.mjs';
-import { addedLines } from './lib/diff.mjs';
+import { addedLines } from '../hooks/lib/diff.mjs';
 import { scanSecurity } from './lib/security.mjs';
 import { findClones, isCloneCandidate } from './lib/clones.mjs';
 import { isInFlight } from './lib/changes.mjs';
 import { buildIndex, findHelperReuse } from './lib/helpers.mjs';
 import { scanDiff } from '../hooks/lib/secrets.mjs';
+import { checkNewFiles } from '../hooks/checks/file-naming.mjs';
+import { scanDbAccess } from '../hooks/checks/db-access.mjs';
+import { auditNaming } from './lib/naming-audit.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -296,6 +299,16 @@ function main() {
     helpers: findHelperReuse({ added: numbered, index: buildIndex(sources) }).slice(0, 20),
   };
 
+  // The file-naming standard: new paths the gate would refuse (committed with the gate
+  // skipped, or before it existed), legacy kinds that grew, files holding several roles.
+  const newPaths = (git(['diff', '--name-only', '-M', '--diff-filter=AR', range]) ?? '').split('\n').filter(Boolean);
+  const naming = {
+    newFiles: checkNewFiles(newPaths, readFile).slice(0, 20),
+    findings: auditNaming({ added: numbered, newFiles: new Set(newPaths), readFile }).slice(0, 30),
+  };
+  // "All database access lives in the repository", on the added lines.
+  const dbAccess = scanDbAccess({ added: numbered, readFile }).slice(0, 30);
+
   // A route/DTO change with an untouched spec is the frontend's silent breakage.
   const apiSurface = files.some((f) => /^backend\/.*\.(controller|dtos|swagger)\.ts$/.test(f));
   const specTouched = files.includes('backend/openapi.json');
@@ -312,6 +325,8 @@ function main() {
     deadCode,
     security,
     reuse,
+    naming,
+    dbAccess,
     blockers: [
       ...(change.path && change.open > 0 ? [`${change.open} open task(s) in ${change.path}`] : []),
       ...(change.path && change.open === 0 && change.done === 0 ? [`${change.path} has no task checkboxes at all`] : []),

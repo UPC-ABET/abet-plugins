@@ -37,40 +37,115 @@ Run from the repo root with the path-filter form; from inside `backend/`, drop t
 
 ```
 backend/src/
-├── commons/     base controller/service/repository/entity/validation, decorators, configs
+├── commons/     framework base classes (base.*), the transaction runner, shared errors/dtos/swagger
 ├── database/    typeorm.config.ts, migrations/, scripts/seeds/
-├── libs/        encrypt.service, secure.functions, global.functions
+├── libs/        cross-module helpers with no module ownership, one topic folder each
 ├── modules/     academic, accreditation, admin, auth, core, evaluation,
 │                evidence, ifc, improvement, mail, organization, survey
-└── shared/      filters/, strings/, types/
+└── shared/      cross-module constants and types only
 ```
 
-Every feature module has the same shape — `api/` (controller, service, docs/swagger),
-`model/` (entity, dtos), `core/` (repository, validation, validation.spec), `config/`
-(routes, strings). Two exceptions: `auth` has no entity, `mail` has no controller or model.
+**A file name says what the file is for, never how it is written.** One role per file.
 
-### File names inside a module
+### Inside a module
 
-Every file is `<kebab-name>.<kind>.ts` (tests: `<kebab-name>.<kind>.spec.ts`; tests that need a real database:
-`<kebab-name>.<kind>.db-spec.ts`, which lives beside the file it tests), and the
-`<kind>` decides the folder. **Do not invent a kind** — `course-sections.bands.ts` or
-`course-sections.section-filter.ts` is wrong; the helper is `core/course-sections.functions.ts`.
+Every feature module has the same layers, and each layer has one meaning:
 
-| Kind | Folder | Holds |
+| Folder | Holds |
+| --- | --- |
+| `api/` | the HTTP surface: receives the request and orchestrates |
+| `api/docs/` | OpenAPI only |
+| `core/` | business logic and everything with I/O (DB, cache, external systems, files) |
+| `model/` | data shapes only: no logic beyond construction |
+| `config/` | module wiring and fixed values |
+| `config/strings/` | i18n keys only |
+| module root | only the Nest module |
+| `decorators/`, `guards/`, `interceptors/`, `gateway/`, `strategies/` | one kind each |
+
+A sub-domain folder inside a module group (`survey/shared/`, `admin/planner/shared/`) is
+itself a module: it uses the same layers, and no source file sits directly in it except its
+`.module.ts`. There is no module-level `constants/` folder.
+
+Every file is `<kebab-name>.<kind>.ts` (tests: `<kebab-name>.<kind>.spec.ts`; tests that need
+a real database: `<kebab-name>.<kind>.db-spec.ts`, beside the file they test). **Every kind
+has exactly one folder**, and the kind decides it:
+
+| Kind | The one folder | Holds |
 | --- | --- | --- |
-| `controller`, `service` | `api/` | HTTP surface, orchestration |
-| `swagger` | `api/docs/` | OpenAPI decorators |
-| `entity`, `dtos`, `types`, `labels`, `errors`, `transforms` | `model/` | shapes and data classes |
-| `repository`, `validation`, `client`, `store` | `core/` | all DB access; business-rule validation |
-| `sql` | `core/` | raw SQL text, only imported by the repository |
-| `routes`, `strings` | `config/` | route constants; i18n keys (`config/strings/<module>.validation.ts`) |
-| `functions`, `constants` | any layer | pure helpers and calculations; fixed values |
+| `controller` | `api/` | HTTP handlers |
+| `service` | `api/` | orchestration called by the controller |
+| `http` | `api/` | response headers, cookies, streaming, attachments |
+| `swagger` | `api/docs/` | OpenAPI decorator factories |
+| `repository` | `core/` | all DB access |
+| `interface` (secondary: `<name>.repository.interface.ts`, `<name>.service.interface.ts`) | `core/` | repository and service contracts |
+| `sql` | `core/` | raw SQL text and SQL fragment/CTE builders; imported only by repositories |
+| `validation` | `core/` | business-rule validation; throws domain errors |
+| `calc` | `core/` | deterministic computation, no I/O |
+| `mapper` | `core/` | row/entity → DTO/wire shape (`toXDto`, `toCachedValue`) |
+| `builder` | `core/` | assembles files/documents/tokens (workbooks, PDF/HTML reports, export buffers, SSO tokens) |
+| `theme` | `core/` | styling for what a builder renders (colours, fonts, report styles) |
+| `cache` | `core/` | cache key builders, namespaces, cache classes |
+| `crypto` | `core/` | hashing, encryption, key material |
+| `client` | `core/` | outbound HTTP/SDK wrappers for external systems |
+| `store` | `core/` | in-memory/state stores |
+| `entity` | `model/` | TypeORM entities |
+| `dtos` | `model/` | request/response DTO classes |
+| `types` | `model/` | TS types/interfaces shared inside the module |
+| `labels` | `model/` | display label maps |
+| `errors` | `model/` | error classes, error factories, driver-error → domain-error translation tables |
+| `routes` | `config/` | route constants |
+| `constants` | `config/` | fixed values and tunables (codes, timeouts, limits) |
+| `messages` | `config/strings/` | i18n key constants |
 | `module` | module root | the Nest module |
+| `config` | module root | module-level config factory |
+| `decorator` | `decorators/` | custom decorators |
+| `guard` | `guards/` | Nest guards |
+| `interceptor` | `interceptors/` | Nest interceptors |
+| `gateway` | `gateway/` | websocket gateways |
+| `strategy` | `strategies/` | passport strategies |
 
-A `.service.ts` may also sit in `core/` for a domain service that is not an HTTP surface.
-Only **new** files are checked (`file-name-guard` on `Write`, and the pre-commit gate);
-legacy files that predate this are left alone. Adding a genuinely new kind is a change to
-this table and to `hooks/checks/file-naming.mjs`, never a per-file decision.
+**Reserved — use when first needed**, already accepted by the gate: `job` (`core/`,
+background job definitions and registries), `policy` (`core/`, access and scope predicates
+that are not endpoint guards — scope tiers, data-scoping decisions), `event` (`core/`, domain
+event payloads and publishers).
+
+For example, the course-section band calculation is `core/course-sections.calc.ts` — not
+`course-sections.bands.ts`, not `course-sections.functions.ts`.
+
+### Outside the modules: commons, libs, shared
+
+These are not layers. Each is the **one** home of a fixed set of kinds that serve two or
+more modules. A kind only one module uses never goes here: it goes in that module's folder
+above.
+
+| Folder | The only home of |
+| --- | --- |
+| `commons/` | framework base classes (`base.controller.ts`, `base.repository.ts`, ...), the generic transaction runner (`<name>.transaction.ts`), the shared `errors` (domain error, internal error), shared `dtos`, shared `swagger` |
+| `libs/<topic>/` | cross-module `calc`, `mapper`, `sql`, `builder`, `cache`, `http`, `crypto`, `client`, plus `service`/`module` for an injectable lib (`encrypt`). Every file in a topic folder (`libs/reporting/`, `libs/excel/`, `libs/chart/`) — no new loose files at the `libs/` root |
+| `shared/` | cross-module `constants` and `types` only |
+
+`database/`, `tools/`, `main.ts` and `app.*` are outside the standard.
+
+### Forbidden on new files
+
+| Name | Instead |
+| --- | --- |
+| `.functions.ts` | retired — name it for what it is: maps a shape → `mapper`; computes a value → `calc`; builds a file/document → `builder`; SQL text → `sql`; translates/creates errors → `errors`; cache keys → `cache`; headers/cookies/streams → `http`; hashing/encryption → `crypto`; touches the DB → a repository method |
+| `.utils.ts`, `.util.ts`, `.helpers.ts`, `.helper.ts`, `.common.ts`, `.misc.ts` | the same decision tree |
+| `.transforms.ts` | `mapper` |
+| `.dto.ts`, `.configs.ts` | `dtos`, `config` (the legacy `error` kind is still accepted; new files use `errors`) |
+| `config/strings/*.validation.ts`, `.strings.ts` | `config/strings/<module>.messages.ts` — `.validation.ts` means only business-rule validation in `core/` |
+| I-prefixed interface files (`ibase.repository.ts`) | `<name>.<kind>.interface.ts` |
+| `index.ts` barrels, and files whose only statements are `export ... from` | import from the file that declares the symbol |
+| a file with no kind segment (`report-filename.ts`) | `<name>.<kind>.ts` |
+
+Only **new** paths are checked (`file-name-guard` on `Write`, and the pre-commit gate);
+a `git mv` is a new path, so a rename must land on an allowed kind. Legacy files outside
+the standard are grandfathered — editing them never blocks. But a legacy kind must not grow:
+adding exports to an existing `.functions.ts`, `.utils.ts` or `.transforms.ts`, or keys to a
+`config/strings/*.validation.ts`, is an audit finding — move the symbols you touch to their
+kind instead. Adding a genuinely new kind is a change to backend POLICIES, this table and
+`hooks/checks/file-naming.mjs`, never a per-file decision.
 
 Admin-owned functionality lives at `modules/admin/<domain>/<module>` but keeps its
 original `@Entity({ schema, name })` — the folder move does not move the table.
@@ -87,8 +162,9 @@ never as a suggestion.
 
 ### No duplicated logic — the rule of three
 Two copies of a piece of logic are tolerated. The **third** is the trigger to extract it
-into one shared home: a function in `core/<module>.functions.ts` (or `libs/` when it
-crosses modules), a service, or a repository method. Before writing a helper, `git grep`
+into one shared home: a file of the kind it is for (`core/<module>.calc.ts`,
+`core/<module>.mapper.ts`, ... — or the same kind in `libs/<topic>/` when it crosses
+modules), a service, or a repository method. Before writing a helper, `git grep`
 for one that already exists. The audit counts copies across the whole repo and reports a
 third one as **major**. Blocks repeated across many modules by convention (the validation
 skeleton) are the pattern, not duplication.
@@ -101,10 +177,17 @@ chart-ancestry climb, shared joins) instead of a new CTE that re-derives a busin
 instead of a second one. Say in the task's retro what you searched for and what you reused.
 
 ### Repository boundary
-All database access lives in `core/<module>.repository.ts`. A service must not inject
-`DataSource` or `EntityManager`, must not call `.query(...)`, and must not build query
-builders — raw SQL included. The service orchestrates; the repository is the only layer
-touching the DB.
+All database access lives in `core/<module>.repository.ts`. Nothing else — service,
+validation, calc, mapper, a legacy `.functions.ts` — may import `DataSource`,
+`EntityManager` or `QueryRunner` as a value, or call `.query(`, `.createQueryBuilder(`,
+`.getRepository(` or `.transaction(` — raw SQL included. The service orchestrates; the
+repository is the only layer touching the DB. The exceptions are the generic transaction
+runner (`commons/<name>.transaction.ts`), tests and db-specs, and `database/` / `tools/`.
+`import type { EntityManager }` is allowed outside a repository only to pass the value
+straight through to a repository call.
+
+The pre-commit gate blocks a new one on the lines a commit adds (`checks/db-access.mjs`),
+and `/abet-audit-pr` and `/abet-review-pr` report it as a policy violation.
 
 Several legacy services still violate this. When you touch one, move its DB access into
 the repository as part of the change. When auditing, a **new** violation is a blocker; a
@@ -146,7 +229,7 @@ The shapes that keep coming back in audits:
 
 ### i18n
 User-facing strings are keys, never raw text: `error.<module>.<key>`, `success.<type>`.
-Keys are declared as constants in `config/strings/<module>.validation.ts`. A hardcoded
+Keys are declared as constants in `config/strings/<module>.messages.ts`. A hardcoded
 Spanish or English string in a thrown error is a finding.
 
 ### Validation

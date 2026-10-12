@@ -45,8 +45,9 @@ Then establish context the diff alone cannot give you (the `openspec/` layout is
    `node node_modules/abet-plugins/shared/scripts/audit-scope.mjs --base <baseRefName>`.
    It prints, among other things, `security` (pattern hits against the team's auth, scope
    and SQL rules), `reuse` (code the PR copies, counted across the repo, and helpers it
-   re-declares by name), `deadCode` and
-   `docsHits`. They cost nothing and do not depend on you noticing. If the head is not
+   re-declares by name), `naming` (paths that break the file-naming standard, legacy kinds the
+   PR grew, files holding several roles), `dbAccess` (database access added outside a
+   repository), `deadCode` and `docsHits`. They cost nothing and do not depend on you noticing. If the head is not
    checked out, or the script is missing, errors or prints nothing (a failure, not an empty
    result — say so in one line), apply the same checks by hand with `git grep`.
 4. **Read the change folder** if one exists: `proposal.md` for the acceptance criteria,
@@ -163,6 +164,17 @@ rules: layering and boundaries, naming, i18n keys instead of raw text, validatio
 right layer, scope headers read from headers only, response shape. Plus documentation
 currency: if the diff changes a domain term, business rule or integration that
 `docs/CONTEXT.md` states differently, **the diff wins** and the stale line is a finding.
+
+- **Database access** — each `dbAccess` hit of severity `block` is a **blocker**, reported
+  as a policy violation quoting backend POLICIES "All database access lives in the
+  repository". A `warn` (`import type { EntityManager }`) is fine when the value goes
+  straight through to a repository call; anything else is **major**.
+- **File names** — one role per file, named for what it is for. A `naming.newFiles` entry is
+  **major** (the gate was skipped). A `legacy-kind-grew` entry is **minor**: "legacy kind
+  grew; move the touched symbols to `<suggested kind>`" — never a blocker. `mixed-roles`
+  and `utils-multiple-functions` are suggestions to split; `shared-lib-pure` is minor once
+  you confirm the file has no side effect. The suggested kind is read from export names, so
+  correct it when the body says otherwise.
 
 **Runtime and tests** — the things invisible in a single file. N+1 queries, unbounded
 result sets, anything quadratic over data that grows with enrolment, concurrency and

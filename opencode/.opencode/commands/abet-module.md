@@ -31,12 +31,17 @@ modules/<name>/
 ├── components/
 ├── constants/
 ├── hooks/
+├── mappers/        shape mappings, one per thing: <thing>Mapper.ts (rubricMapper.ts)
 ├── pages/          page-level components, the entry points app/ routes render
 ├── schemas/        validation logic extracted from components
 ├── services/       API calls only — no types here
 ├── types/          ALL types: request, response, domain
+├── utils/          pure functions, one per file, named after the function
 └── index.ts        the barrel
 ```
+
+No `helpers/` folder and no `*Utils.ts` / `*Helpers.ts` file: name each file for what it
+does (the frontend stack rules, "File names").
 
 **No empty placeholder files.** Do not create `schemas/index.ts` containing `export {}`.
 Create the folder when there is something to put in it.
@@ -114,7 +119,44 @@ The module that owns a concept exports it; others import from there. A selector 
 academic periods belongs in `@/modules/academic/components`, not in `shared/`. If you
 find a domain concept in `shared/`, that is a finding.
 
-### 5. Check the admin route shape
+### 5. Check file names
+
+```bash
+git ls-files 'frontend/src/**' | rg '(Utils?|Helpers?).tsx?$|/helpers?/|/utils/[^/]*Mappers?.ts
+
+If the change touched admin: one route per concern (`/admin/iam`), domains selected by
+**in-page tabs** with state in the URL (`?tab=`, and `?sub=` only where a domain has
+several screens). Never `/admin/<concern>/<domain>`. Switching the top tab clears `?sub=`.
+
+Sidebar is **max two levels**. A feature that does not fit as siblings pushes the split
+into the page as tabs, not into the sidebar as a third level.
+
+### 7. Verify
+
+```bash
+pnpm --filter ./frontend exec tsc --noEmit
+pnpm --filter ./frontend lint
+```
+
+Both must be clean. Lint runs with `--max-warnings 0`, so a warning is a failure.
+
+## Report
+
+For Mode A: the folders created and why the others were not, the barrel contents, and the
+route wiring.
+
+For Mode B: a table of violations with file, rule, and the fix. Blockers first.
+
+**Do not commit.**
+
+```
+
+A hit **added by this change** is a blocker (the naming gate refuses it, so it got in with the
+gate skipped); a legacy one is not your finding. Mappings belong in `mappers/<thing>Mapper.ts`,
+pure functions in `utils/<functionName>.ts` (one per file), and nothing pure in
+`shared/lib/`.
+
+### 6. Check the admin route shape
 
 If the change touched admin: one route per concern (`/admin/iam`), domains selected by
 **in-page tabs** with state in the URL (`?tab=`, and `?sub=` only where a domain has

@@ -103,6 +103,8 @@ and a failing-first test. Read the entities, the unique keys and `docs/adr/` to 
 - `openspec/changes/<slug>/tasks.md`, from `templates/tasks.md`: vertical tasks, each with
   its `- [ ] Task complete` box, a **Files** block (`` `path` (modify|new|test) ``) and TDD
   steps. Every file the change touches is named, because the gate reads them.
+  A new file is named by its kind (the kind table in the stack rules — never `.functions.ts`
+  or `.utils.ts`).
 
 Then run the gate:
 

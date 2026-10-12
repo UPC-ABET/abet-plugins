@@ -23,14 +23,16 @@ import { slugFromBranch } from '../lib/branches.mjs';
 import { isAuthored, isScannable as isScannablePath } from '../lib/paths.mjs';
 import { validateCommitMessage } from '../checks/commit-message.mjs';
 import { runPreCommitChecks } from '../checks/pre-commit.mjs';
-import { checkModuleFileName } from '../checks/file-naming.mjs';
+import { checkFileName, checkNewFile, isReExportOnly, KIND_FOLDERS, LIBS_KINDS } from '../checks/file-naming.mjs';
+import { findDbAccess, scanDbAccess } from '../checks/db-access.mjs';
+import { auditNaming } from '../../scripts/lib/naming-audit.mjs';
 import { isMain } from '../../scripts/lib/is-main.mjs';
 import { checkLean, openQuestions, scopeCheckRows, BOUNDS } from '../../scripts/lib/lean-gate.mjs';
 import { validateRecord, aggregate, renderReport } from '../../scripts/lib/ledger.mjs';
 import { findClones } from '../../scripts/lib/clones.mjs';
 import { scanSecurity, findRouteAuthIssues, findUnusedScopeParams, findDtoIssues } from '../../scripts/lib/security.mjs';
 import { buildIndex, findHelperReuse } from '../../scripts/lib/helpers.mjs';
-import { addedLines } from '../../scripts/lib/diff.mjs';
+import { addedLines } from '../lib/diff.mjs';
 import { measure, chooseDepth, countTasks, packageOf, newTerms, findDocHits, headingsOf, addedByFile, exportedNames, findDeadCode, RISKY } from '../../scripts/audit-scope.mjs';
 import { findWorkspacePackages, packageFor } from '../lib/workspace.mjs';
 import { inFlightChanges, archivedChanges, isInFlight } from '../../scripts/lib/changes.mjs';
@@ -619,85 +621,294 @@ function buildWorkspaceRepo(prefix) {
   rmSync(records, { recursive: true, force: true });
 }
 
-// ------------------------------------------------------- module file naming
-console.log('module file naming');
+// ------------------------------------------------------- file naming (standard v2)
+console.log('file naming');
 
 const M = 'backend/src/modules/academic/course-sections';
-const named = (path) => (checkModuleFileName(path) === null ? 'ok' : 'bad');
+const named = (path) => (checkFileName(path) === null ? 'ok' : 'bad');
+const nameMsg = (path) => checkFileName(path) ?? '';
 
-// the files the convention exists to protect
-for (const f of ['api/course-sections.service.ts', 'api/course-sections.controller.ts',
-  'api/docs/course-sections.swagger.ts', 'model/course-sections.entity.ts',
-  'model/course-sections.dtos.ts', 'model/course-sections.types.ts',
-  'core/course-sections.repository.ts', 'core/course-sections.validation.ts',
-  'core/course-sections.functions.ts', 'config/course-sections.routes.ts',
-  'course-sections.module.ts', 'api/course-sections.service.spec.ts',
-  'core/course-sections.validation.spec.ts', 'decorators/roles.decorator.ts',
-  'config/strings/course-sections.validation.ts', 'core/user-schools/user-schools.repository.ts',
-  'core/browser-auth.client.ts']) {
+// every kind in its one folder is accepted ...
+const HOME = {
+  controller: 'api', service: 'api', http: 'api', swagger: 'api/docs',
+  repository: 'core', sql: 'core', validation: 'core', calc: 'core', mapper: 'core', builder: 'core',
+  theme: 'core', cache: 'core', crypto: 'core', client: 'core', store: 'core', job: 'core', policy: 'core', event: 'core',
+  entity: 'model', dtos: 'model', types: 'model', labels: 'model', errors: 'model', error: 'model',
+  routes: 'config', constants: 'config', messages: 'config/strings',
+  module: '.', config: '.',
+  decorator: 'decorators', guard: 'guards', interceptor: 'interceptors', gateway: 'gateway', strategy: 'strategies',
+};
+check('naming: the test table covers every kind', Object.keys(HOME).sort().join(), Object.keys(KIND_FOLDERS).sort().join());
+const inFolder = (folder, file) => (folder === '.' ? `${M}/${file}` : `${M}/${folder}/${file}`);
+for (const [kind, folder] of Object.entries(HOME)) {
+  check(`naming: .${kind}.ts in ${folder} is accepted`, named(inFolder(folder, `course-sections.${kind}.ts`)), 'ok');
+  check(`naming: .${kind}.spec.ts in ${folder} is accepted`, named(inFolder(folder, `course-sections.${kind}.spec.ts`)), 'ok');
+  // ... and refused anywhere else, with the message naming its one folder
+  const wrong = folder === 'core' ? 'model' : 'core';
+  check(`naming: .${kind}.ts in ${wrong}/ is rejected`, named(inFolder(wrong, `course-sections.${kind}.ts`)), 'bad');
+  check(`naming: misplaced .${kind}.ts names its one folder`,
+    nameMsg(inFolder(wrong, `course-sections.${kind}.ts`)).includes(folder === '.' ? 'the module root' : `\`${folder}/\``), true);
+}
+check('naming: no kind lists two folders', Object.values(KIND_FOLDERS).every((f) => typeof f === 'string'), true);
+
+for (const f of ['core/course-sections.repository.db-spec.ts', 'core/user-schools/user-schools.repository.ts',
+  'core/course-sections.repository.interface.ts', 'core/user-schools.service.interface.ts', 'decorators/roles.decorator.ts']) {
   check(`naming: ${f} is accepted`, named(`${M}/${f}`), 'ok');
 }
-
-// what the model actually produced, plus the near misses
-// `modules/core/` is a domain group, not the `core/` layer
 check('naming: a module inside the `core` domain group is accepted',
   named('backend/src/modules/core/parameters/parameters.module.ts'), 'ok');
 check('naming: layers still resolve inside the `core` domain group',
   named('backend/src/modules/core/parameters/api/parameters.service.ts'), 'ok');
+
+// invented, retired and drifting kinds
 check('naming: .bands.ts is rejected', named(`${M}/core/course-sections.bands.ts`), 'bad');
 check('naming: .section-filter.ts is rejected', named(`${M}/core/course-sections.section-filter.ts`), 'bad');
-check('naming: a kind in the wrong folder is rejected', named(`${M}/core/course-sections.controller.ts`), 'bad');
-check('naming: a service in model/ is rejected', named(`${M}/model/course-sections.service.ts`), 'bad');
-check('naming: controller at the module root is rejected', named(`${M}/course-sections.controller.ts`), 'bad');
+for (const k of ['functions', 'utils', 'util', 'helpers', 'helper', 'common', 'misc']) {
+  check(`naming: .${k}.ts is rejected in core/`, named(`${M}/core/course-sections.${k}.ts`), 'bad');
+}
+check('naming: .functions.ts is rejected even at the module root', named(`${M}/course-sections.functions.ts`), 'bad');
+check('naming: the .functions.ts hint is a decision tree',
+  ['mapper', 'calc', 'builder', 'sql', 'errors', 'cache', 'http', 'crypto', 'repository'].every((k) => nameMsg(`${M}/core/x.functions.ts`).includes(`.${k}.ts`)), true);
+check('naming: an invented kind gets the decision tree too', nameMsg(`${M}/core/x.bands.ts`).includes('.calc.ts'), true);
+check('naming: .transforms.ts is rejected, pointing at mapper',
+  nameMsg(`${M}/model/course-sections.transforms.ts`).includes('mapper'), true);
+check('naming: .dto.ts is rejected, pointing at dtos', nameMsg(`${M}/model/course-sections.dto.ts`).includes('.dtos.ts'), true);
+check('naming: .configs.ts is rejected, pointing at config', nameMsg(`${M}/course-sections.configs.ts`).includes('.config.ts'), true);
+check('naming: config/strings/*.validation.ts is rejected, pointing at messages',
+  nameMsg(`${M}/config/strings/course-sections.validation.ts`).includes('.messages.ts'), true);
+check('naming: .strings.ts is rejected, pointing at messages',
+  nameMsg(`${M}/config/strings/course-sections.strings.ts`).includes('.messages.ts'), true);
+check('naming: .transaction.ts inside a module is rejected', named(`${M}/core/course-sections.transaction.ts`), 'bad');
+check('naming: .interface on another kind is rejected', named(`${M}/model/course-sections.dtos.interface.ts`), 'bad');
+check('naming: a contract outside core/ is rejected', named(`${M}/api/course-sections.service.interface.ts`), 'bad');
+check('naming: a module-level constants/ folder is rejected', named(`${M}/constants/course-sections.constants.ts`), 'bad');
+check('naming: sub-domain folder holds only its module', named('backend/src/modules/survey/shared/survey-frontend-paths.ts'), 'bad');
+check('naming: sub-domain folder uses the layers', named('backend/src/modules/survey/shared/core/derived-score.calc.ts'), 'ok');
+check('naming: sub-domain module file is accepted', named('backend/src/modules/survey/shared/survey-shared.module.ts'), 'ok');
 check('naming: kind-less file is rejected', named(`${M}/core/helpers.ts`), 'bad');
-check('naming: camelCase name is rejected', named(`${M}/core/courseSections.functions.ts`), 'bad');
-check('naming: db-spec beside its repository is accepted', named(`${M}/core/course-sections.repository.db-spec.ts`), 'ok');
+check('naming: backend index.ts barrel is rejected', nameMsg(`${M}/index.ts`).includes('barrel'), true);
+check('naming: camelCase name is rejected', named(`${M}/core/courseSections.calc.ts`), 'bad');
 check('naming: db-spec of an unknown kind is rejected', named(`${M}/core/course-sections.bands.db-spec.ts`), 'bad');
-check('naming: spec of an unknown kind is rejected', named(`${M}/core/course-sections.bands.spec.ts`), 'bad');
-check('naming: message names the offending kind',
-  checkModuleFileName(`${M}/core/course-sections.bands.ts`).includes('.bands.ts'), true);
-check('naming: message points at .functions.ts',
-  checkModuleFileName(`${M}/core/course-sections.bands.ts`).includes('functions'), true);
-check('naming: message says where a misplaced kind belongs',
-  checkModuleFileName(`${M}/core/course-sections.controller.ts`).includes('`api/`'), true);
-
-// out of scope: anything not under src/modules, and non-TypeScript files
-check('naming: outside src/modules is ignored', named('backend/src/libs/global.functions.ts'), 'ok');
-check('naming: frontend is ignored', named('frontend/src/modules/x/foo.bands.ts'), 'ok');
-check('naming: non-ts file is ignored', named(`${M}/core/notes.md`), 'ok');
+check('naming: spec of a retired kind is rejected', named(`${M}/core/course-sections.functions.spec.ts`), 'bad');
 check('naming: windows separators are handled', named(`backend\\src\\modules\\a\\b\\core\\b.bands.ts`), 'bad');
 
+// libs/, commons/, shared/: each the one home of a fixed set of cross-module kinds
+for (const k of LIBS_KINDS) check(`naming: libs/<topic>/x.${k}.ts is accepted`, named(`backend/src/libs/reporting/x.${k}.ts`), 'ok');
+check('naming: a loose file at the libs/ root is rejected', named('backend/src/libs/report-filename.calc.ts'), 'bad');
+check('naming: a kind-less libs file is rejected', named('backend/src/libs/reporting/report-filename.ts'), 'bad');
+check('naming: .functions.ts in libs is rejected', named('backend/src/libs/reporting/report.functions.ts'), 'bad');
+check('naming: .utils.ts in libs is rejected', named('backend/src/libs/reporting/report.utils.ts'), 'bad');
+check('naming: types in libs point at shared/', nameMsg('backend/src/libs/reporting/report.types.ts').includes('src/shared/'), true);
+check('naming: a repository in libs is rejected', named('backend/src/libs/reporting/report.repository.ts'), 'bad');
+for (const f of ['base.controller.ts', 'base.repository.ts', 'base.repository.interface.ts', 'run.transaction.ts',
+  'domain.errors.ts', 'pagination.dtos.ts', 'conflict.swagger.ts', 'base.decorator.spec.ts']) {
+  check(`naming: commons/${f} is accepted`, named(`backend/src/commons/${f}`), 'ok');
+}
+check('naming: a kind-less commons file is rejected', named('backend/src/commons/domain-error.ts'), 'bad');
+check('naming: an I-prefixed commons contract is rejected', nameMsg('backend/src/commons/ibase.repository.ts').includes('base.repository.interface.ts'), true);
+check('naming: a calc in commons is rejected, pointing at libs', nameMsg('backend/src/commons/x.calc.ts').includes('src/libs/'), true);
+check('naming: .functions.ts in commons is rejected', named('backend/src/commons/transaction.functions.ts'), 'bad');
+for (const f of ['constants/app.constants.ts', 'types/i18n.types.ts', 'role-codes.constants.ts']) {
+  check(`naming: shared/${f} is accepted`, named(`backend/src/shared/${f}`), 'ok');
+}
+check('naming: an unsuffixed shared constant is rejected', named('backend/src/shared/constants/mime-types.ts'), 'bad');
+check('naming: a service in shared/ is rejected', named('backend/src/shared/x.service.ts'), 'bad');
+
+// out of scope
+check('naming: database/ is ignored', named('backend/src/database/migrations/1700000000000-x.ts'), 'ok');
+check('naming: tools/ is ignored', named('backend/src/tools/anything.ts'), 'ok');
+check('naming: main.ts is ignored', named('backend/src/main.ts'), 'ok');
+check('naming: app.module.ts is ignored', named('backend/src/app.module.ts'), 'ok');
+check('naming: non-ts file is ignored', named(`${M}/core/notes.md`), 'ok');
+
+// frontend
+const FE = 'frontend/src/modules/evaluation';
+for (const f of ['utils/multipleCompetencyUtils.ts', 'components/x/singleCompetencyRubricUtils.ts', 'utils/rubricUtil.ts',
+  'components/gra/graNotificationHelpers.ts', 'components/TableHelper.tsx']) {
+  check(`naming: frontend ${f} is rejected`, named(`${FE}/${f}`), 'bad');
+}
+check('naming: frontend helpers/ folder is rejected', named(`${FE}/helpers/formatScore.ts`), 'bad');
+check('naming: frontend helper/ folder is rejected', named(`${FE}/components/helper/formatScore.ts`), 'bad');
+check('naming: frontend shared/lib/utils.ts is rejected', named('frontend/src/shared/lib/utils.ts'), 'bad');
+check('naming: frontend mappers/<thing>Mapper.ts is accepted', named(`${FE}/mappers/rubricMapper.ts`), 'ok');
+check('naming: frontend shared/mappers is accepted', named('frontend/src/shared/mappers/schoolMapper.ts'), 'ok');
+check('naming: frontend *Mappers.ts in utils/ is rejected', named(`${FE}/utils/rubricsMappers.ts`), 'bad');
+check('naming: frontend plural mapper in mappers/ is rejected', named(`${FE}/mappers/rubricsMappers.ts`), 'bad');
+check('naming: frontend non-mapper file in mappers/ is rejected', named(`${FE}/mappers/rubric.ts`), 'bad');
+for (const f of ['utils/formatScore.ts', 'components/RubricTable.tsx', 'hooks/useRubrics.ts', 'index.ts', 'services/rubrics.ts']) {
+  check(`naming: frontend ${f} is accepted`, named(`${FE}/${f}`), 'ok');
+}
+check('naming: frontend shared/utils/cn.ts is accepted', named('frontend/src/shared/utils/cn.ts'), 'ok');
+check('naming: frontend shared/lib/apiClient.ts is accepted', named('frontend/src/shared/lib/apiClient.ts'), 'ok');
+check('naming: frontend outside src is ignored', named('frontend/next.config.ts'), 'ok');
+
+// content rules
+check('naming: a re-export-only file is detected', isReExportOnly("export { a } from './a.calc';\nexport * from './b.mapper';\n"), true);
+check('naming: a multi-line re-export is detected', isReExportOnly("// barrel\nexport {\n  a,\n  b,\n} from './a.calc';\n"), true);
+check('naming: a file with code is not re-export-only', isReExportOnly("export { a } from './a';\nexport const b = 1;\n"), false);
+check('naming: libs/parameter.functions.ts-style re-export file is denied',
+  checkNewFile('backend/src/libs/parameters/parameter.calc.ts', "export { resolveParameter } from '../../modules/core/parameters/core/parameters.calc';\n") !== null, true);
+check('naming: a real calc file passes the content check',
+  checkNewFile(`${M}/core/course-sections.calc.ts`, 'export function sum(a: number, b: number) { return a + b; }\n'), null);
+check('naming: a repository holding only a contract must be .interface.ts',
+  (checkNewFile(`${M}/core/course-sections.repository.ts`, 'export interface CourseSectionsRepo { find(): void }\n') ?? '').includes('course-sections.repository.interface.ts'), true);
+check('naming: a repository class passes the content check',
+  checkNewFile(`${M}/core/course-sections.repository.ts`, 'export class CourseSectionsRepository {}\n'), null);
+check('naming: frontend barrels are not re-export violations',
+  checkNewFile(`${FE}/index.ts`, "export * from './components';\n"), null);
+
 // the Write hook
-function writeVerdict(file_path) {
+function writeVerdict(file_path, content = '') {
   const res = spawnSync(process.execPath, [join(HOOKS, 'file-name-guard.mjs')], {
-    input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path, content: '' } }),
+    input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path, content } }),
     encoding: 'utf8', timeout: 30_000,
   });
   const out = (res.stdout || '').trim();
   return out && JSON.parse(out).hookSpecificOutput?.permissionDecision === 'deny' ? 'deny' : 'allow';
 }
 check('write hook: denies a new .bands.ts', writeVerdict(join(tmpdir(), `x/${M}/core/course-sections.bands.ts`)), 'deny');
-check('write hook: allows a well-named new file', writeVerdict(join(tmpdir(), `x/${M}/core/course-sections.functions.ts`)), 'allow');
+check('write hook: denies a new .functions.ts', writeVerdict(join(tmpdir(), `x/${M}/core/course-sections.functions.ts`)), 'deny');
+check('write hook: allows a well-named new file', writeVerdict(join(tmpdir(), `x/${M}/core/course-sections.calc.ts`)), 'allow');
+check('write hook: denies a new re-export-only file',
+  writeVerdict(join(tmpdir(), `x/${M}/core/course-sections.calc.ts`), "export * from './other.calc';\n"), 'deny');
+check('write hook: denies a new frontend *Utils.ts', writeVerdict(join(tmpdir(), `x/${FE}/utils/scoreUtils.ts`)), 'deny');
 check('write hook: ignores other paths', writeVerdict(join(tmpdir(), 'x/README.md')), 'allow');
 check('write hook: never blocks rewriting a file that already exists',
   writeVerdict(join(HOOKS, 'checks', 'file-naming.mjs')), 'allow');
 
-// the pre-commit gate: new files are checked, legacy files being modified are not
+// the pre-commit gate: new paths are checked (renames included), legacy files being modified are not
 {
   const dir = buildWorkspaceRepo('abet-pc-naming-');
   stage(dir, `${M}/core/legacy-codes.ts`); // predates the convention
+  stage(dir, `${M}/core/course-sections.functions.ts`, 'export const a = 1;\n'); // a grandfathered kind
   spawnSync('git', ['commit', '-q', '-m', 'chore: seed'], { cwd: dir });
 
   stage(dir, `${M}/core/legacy-codes.ts`, 'export const x = 2;\n');
   check('naming gate: modifying a legacy misnamed file passes', runPreCommitChecks(dir, {}).ok, true);
+  stage(dir, `${M}/core/course-sections.functions.ts`, 'export const a = 1;\nexport const b = 2;\n');
+  check('naming gate: editing a legacy .functions.ts passes', runPreCommitChecks(dir, {}).ok, true);
+  spawnSync('git', ['commit', '-q', '-m', 'chore: edit'], { cwd: dir });
+
+  spawnSync('git', ['mv', `${M}/core/course-sections.functions.ts`, `${M}/core/course-sections.utils.ts`], { cwd: dir });
+  const renamedBad = runPreCommitChecks(dir, {});
+  check('naming gate: a git mv onto a forbidden kind blocks', renamedBad.ok, false);
+  check('naming gate: the rename block names the new path', renamedBad.message.includes('course-sections.utils.ts'), true);
+  spawnSync('git', ['mv', `${M}/core/course-sections.utils.ts`, `${M}/core/course-sections.calc.ts`], { cwd: dir });
+  check('naming gate: a git mv onto an allowed kind passes', runPreCommitChecks(dir, {}).ok, true);
+  spawnSync('git', ['commit', '-q', '-m', 'refactor: rename'], { cwd: dir });
 
   stage(dir, `${M}/core/course-sections.bands.ts`);
   const blocked = runPreCommitChecks(dir, {});
   check('naming gate: adding a misnamed file blocks', blocked.ok, false);
   check('naming gate: block lists the file', blocked.message.includes('course-sections.bands.ts'), true);
   check('naming gate: ABET_SKIP_NAMING=1 bypasses it', runPreCommitChecks(dir, { ABET_SKIP_NAMING: '1' }).ok, true);
+  spawnSync('git', ['rm', '-q', '--cached', `${M}/core/course-sections.bands.ts`], { cwd: dir });
+
+  stage(dir, `${M}/core/course-sections.mapper.ts`, "export { toDto } from './course-sections.calc';\n");
+  check('naming gate: a new re-export-only file blocks', runPreCommitChecks(dir, {}).ok, false);
 
   rmSync(dir, { recursive: true, force: true });
+}
+
+// ------------------------------------------------------- db access outside a repository
+console.log('db access');
+
+const dbHits = (file, text, added) => findDbAccess({ file, text, addedNums: new Set(added ?? text.split('\n').map((_, i) => i + 1)) });
+const SERVICE_DB = "import { Injectable } from '@nestjs/common';\nimport { EntityManager } from 'typeorm';\n\n" +
+  "export class XService {\n  constructor(private readonly manager: EntityManager) {}\n" +
+  "  run() { return this.manager.query('SELECT 1'); }\n}\n";
+{
+  const hits = dbHits(`${M}/api/course-sections.service.ts`, SERVICE_DB);
+  check('db: a service importing EntityManager is a block', hits.some((h) => h.rule === 'db-handle-outside-repository' && h.severity === 'block'), true);
+  check('db: a service calling .query( is a block', hits.some((h) => h.rule === 'db-call-outside-repository' && h.line === 6), true);
+  check('db: the hit cites the policy', hits[0].why.includes('All database access lives in the repository'), true);
+}
+check('db: a repository is allowed', dbHits(`${M}/core/course-sections.repository.ts`, SERVICE_DB).length, 0);
+check('db: the commons transaction runner is allowed', dbHits('backend/src/commons/run.transaction.ts', SERVICE_DB).length, 0);
+check('db: a .transaction.ts outside commons is not exempt', dbHits(`${M}/core/x.transaction.ts`, SERVICE_DB).length > 0, true);
+check('db: a spec is allowed', dbHits(`${M}/api/course-sections.service.spec.ts`, SERVICE_DB).length, 0);
+check('db: a db-spec is allowed', dbHits(`${M}/core/course-sections.calc.db-spec.ts`, SERVICE_DB).length, 0);
+check('db: database/ is allowed', dbHits('backend/src/database/scripts/seeds/x.ts', SERVICE_DB).length, 0);
+check('db: tools/ is allowed', dbHits('backend/src/tools/x.ts', SERVICE_DB).length, 0);
+check('db: frontend is ignored', dbHits('frontend/src/shared/lib/x.ts', SERVICE_DB).length, 0);
+check('db: a .functions.ts running manager.query is a block',
+  dbHits('backend/src/modules/survey/shared/core/derived-score.functions.ts', 'export async function f(m) {\n  return m.query(`SELECT 1`);\n}\n')
+    .some((h) => h.severity === 'block'), true);
+for (const call of ['createQueryBuilder', 'getRepository', 'transaction']) {
+  check(`db: .${call}( outside a repository is a block`,
+    dbHits(`${M}/core/x.calc.ts`, `export const f = (ds) => ds.${call}(X);\n`).some((h) => h.severity === 'block'), true);
+}
+check('db: a multi-line typeorm import is caught', dbHits(`${M}/api/x.service.ts`,
+  "import {\n  In,\n  DataSource,\n} from 'typeorm';\n", [3]).some((h) => h.rule === 'db-handle-outside-repository'), true);
+check('db: import type { EntityManager } is only a warning', dbHits(`${M}/api/x.service.ts`,
+  "import type { EntityManager } from 'typeorm';\n").map((h) => h.severity).join(), 'warn');
+check('db: an inline type import is only a warning', dbHits(`${M}/api/x.service.ts`,
+  "import { type EntityManager, In } from 'typeorm';\n").map((h) => h.severity).join(), 'warn');
+check('db: other typeorm imports are fine', dbHits(`${M}/api/x.service.ts`, "import { In, Not } from 'typeorm';\n").length, 0);
+check('db: only added lines are judged', dbHits(`${M}/api/x.service.ts`, SERVICE_DB, [1]).length, 0);
+check('db: a commented-out call is ignored', dbHits(`${M}/api/x.service.ts`, '// this.manager.query(x)\n').length, 0);
+check('db: scanDbAccess walks a diff', scanDbAccess({
+  added: new Map([[`${M}/api/x.service.ts`, [{ n: 6, text: '' }]], [`${M}/core/x.repository.ts`, [{ n: 6, text: '' }]]]),
+  readFile: () => SERVICE_DB,
+}).map((h) => h.file).join(), `${M}/api/x.service.ts`);
+
+// the pre-commit gate blocks a new one; a type import and a legacy line do not
+{
+  const dir = buildWorkspaceRepo('abet-pc-db-');
+  stage(dir, `${M}/api/legacy.service.ts`, "import { EntityManager } from 'typeorm';\nexport class L {}\n");
+  spawnSync('git', ['commit', '-q', '-m', 'chore: seed'], { cwd: dir });
+
+  stage(dir, `${M}/api/legacy.service.ts`, "import { EntityManager } from 'typeorm';\nexport class L {}\nexport const n = 1;\n");
+  check('db gate: editing around a legacy violation passes', runPreCommitChecks(dir, {}).ok, true);
+
+  stage(dir, `${M}/api/course-sections.service.ts`, SERVICE_DB);
+  const blocked = runPreCommitChecks(dir, {});
+  check('db gate: a service with a query blocks', blocked.ok, false);
+  check('db gate: the block names the file and line', blocked.message.includes('course-sections.service.ts:6'), true);
+  check('db gate: ABET_SKIP_DB_ACCESS=1 bypasses it', runPreCommitChecks(dir, { ABET_SKIP_DB_ACCESS: '1' }).ok, true);
+  spawnSync('git', ['rm', '-q', '--cached', `${M}/api/course-sections.service.ts`], { cwd: dir });
+
+  stage(dir, `${M}/core/course-sections.repository.ts`, SERVICE_DB);
+  stage(dir, 'backend/src/commons/run.transaction.ts', SERVICE_DB);
+  stage(dir, `${M}/api/typed.service.ts`, "import type { EntityManager } from 'typeorm';\nexport const f = (m: EntityManager) => m;\n");
+  check('db gate: repository, commons transaction and a type import pass', runPreCommitChecks(dir, {}).ok, true);
+
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// ------------------------------------------------------- naming audit (what the gate lets through)
+console.log('naming audit');
+
+{
+  const legacy = auditNaming({
+    added: new Map([
+      [`${M}/core/course-sections.functions.ts`, [{ n: 10, text: 'export function toSectionDto(r) {' }, { n: 20, text: 'export const sumWeights = () => 0;' }]],
+      [`${M}/config/strings/course-sections.validation.ts`, [{ n: 3, text: "  NEW_KEY: 'error.x.y'," }]],
+    ]),
+    newFiles: new Set(),
+    readFile: () => 'x\n',
+  });
+  check('naming audit: a grown .functions.ts is a minor finding', legacy.filter((f) => f.rule === 'legacy-kind-grew').length, 2);
+  check('naming audit: it suggests a kind per symbol',
+    /toSectionDto → `mapper`/.test(legacy[0].why) && /sumWeights → `calc`/.test(legacy[0].why), true);
+  check('naming audit: an edited config/strings validation file points at messages', legacy[1].why.includes('.messages.ts'), true);
+  check('naming audit: a new .functions.ts is the gate\'s job, not a growth finding', auditNaming({
+    added: new Map([[`${M}/core/x.functions.ts`, [{ n: 1, text: 'export const a = 1;' }]]]), newFiles: new Set([`${M}/core/x.functions.ts`]), readFile: () => 'x\n',
+  }).length, 0);
+
+  const big = ['export function toRowDto() {}', 'export function sumScores() {}', 'export function buildWorkbook() {}',
+    ...Array.from({ length: 310 }, () => '// line')].join('\n');
+  const mixed = auditNaming({ added: new Map([[`${M}/core/x.calc.ts`, [{ n: 1, text: 'export function toRowDto() {}' }]]]), newFiles: new Set([`${M}/core/x.calc.ts`]), readFile: () => big });
+  check('naming audit: a 300+ line file with several roles is a split suggestion', mixed.some((f) => f.rule === 'mixed-roles'), true);
+  const small = auditNaming({ added: new Map([[`${M}/core/x.calc.ts`, [{ n: 1, text: 'export function toRowDto() {}' }]]]), newFiles: new Set([`${M}/core/x.calc.ts`]), readFile: () => big.split('\n').slice(0, 50).join('\n') });
+  check('naming audit: a short file is not a split suggestion', small.length, 0);
+
+  const pure = auditNaming({ added: new Map([['frontend/src/shared/lib/clamp.ts', [{ n: 1, text: 'export const clamp = () => 0;' }]]]), newFiles: new Set(['frontend/src/shared/lib/clamp.ts']), readFile: () => 'export const clamp = (n: number) => n;\n' });
+  check('naming audit: a pure new shared/lib file is flagged', pure.some((f) => f.rule === 'shared-lib-pure'), true);
+  const infra = auditNaming({ added: new Map([['frontend/src/shared/lib/cookies.ts', [{ n: 1, text: 'export const c = 1;' }]]]), newFiles: new Set(['frontend/src/shared/lib/cookies.ts']), readFile: () => 'export const c = () => document.cookie;\n' });
+  check('naming audit: a shared/lib file with side effects is not', infra.length, 0);
+  const multi = auditNaming({ added: new Map([['frontend/src/modules/x/utils/formatScore.ts', [{ n: 1, text: 'export function a() {}' }]]]), newFiles: new Set(), readFile: () => 'export function formatScore() {}\nexport function parseScore() {}\n' });
+  check('naming audit: a utils/ file with two functions is a split suggestion', multi.some((f) => f.rule === 'utils-multiple-functions'), true);
 }
 
 // ------------------------------------------------------------ audit-scope
@@ -1309,6 +1520,7 @@ console.log('scripts through a link (how pnpm installs the package)');
   mkdirSync(real);
   cpSync(join(HOOKS, '..', 'scripts'), join(real, 'scripts'), { recursive: true });
   cpSync(join(HOOKS, 'lib'), join(real, 'hooks', 'lib'), { recursive: true });
+  cpSync(join(HOOKS, 'checks'), join(real, 'hooks', 'checks'), { recursive: true });
   const link = join(base, 'link');
   symlinkSync(real, link, 'junction'); // a junction needs no privilege on Windows; ignored elsewhere
   const work = mkdtempSync(join(tmpdir(), 'abet-link-cwd-')); // not a git repo: each script must still say something

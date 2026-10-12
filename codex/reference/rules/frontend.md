@@ -58,12 +58,38 @@ frontend/src/
 │                 evaluation, ifcs, loads, organization, planner,
 │                 scraping-exports, surveys
 ├── providers/    AbetProvider, QueryProvider
-└── shared/       components/ui, constants, hooks, lib
+└── shared/       components/ui, constants, hooks, lib, mappers, types, utils
 ```
 
-Every module: `components/`, `constants/`, `hooks/`, `pages/`, `schemas/`, `services/`
-(API calls only, no types), `types/` (all types), plus a barrel `index.ts`. Create only
-the folders the module actually needs.
+Every module: `components/`, `constants/`, `hooks/`, `mappers/`, `pages/`, `schemas/`,
+`services/` (API calls only, no types), `types/` (all types), `utils/`, plus a barrel
+`index.ts`. Create only the folders the module actually needs.
+
+### File names — one role per file
+
+A file name says what the file is for, never how it is written. The existing camelCase
+(functions, hooks) and PascalCase (components) rules and role folders stand; on top of them:
+
+- **`mappers/`** (module-level and `shared/`) — shape mappings, one per thing, named
+  `<thing>Mapper.ts` (`rubricMapper.ts`). It replaces the `*Mappers.ts` files sitting in
+  `utils/`.
+- **`utils/`** — pure functions only, **one function per file, the file named after the
+  function** (`formatDate.ts`). A `utils/` file exporting several unrelated functions is an
+  audit suggestion to split.
+- **`shared/lib/` vs `shared/utils/`** — `shared/lib/` is infrastructure with side effects
+  (`apiClient`, cookies, `logger`, `routeAccess`, `serverLocale`, redirect); `shared/utils/`
+  is pure functions. A new pure-function file never goes in `shared/lib/`, and `shared/lib/`
+  gets no `utils.ts`. `cn()` lives in `@/shared/utils` — the copy in `shared/lib/utils.ts`
+  is a known duplicate to be removed.
+- **Forbidden on new files**: names ending in `Utils.ts`, `Util.ts`, `Helpers.ts` or
+  `Helper.ts` (any folder, `.tsx` too), and folders named `helpers/` or `helper/`. Name
+  the file for what it does: a pure function in `utils/`, a mapping in `mappers/`, a hook in
+  `hooks/`, a value in `constants/`.
+
+The naming gate (`file-name-guard` on `Write`, and the pre-commit gate) refuses the
+forbidden names and a misnamed `mappers/` file; purity and one-function-per-file are judged
+by `/abet-audit-pr`. Legacy files are grandfathered; only new paths (renames included) are
+checked.
 
 ## The failure modes that actually bite here
 

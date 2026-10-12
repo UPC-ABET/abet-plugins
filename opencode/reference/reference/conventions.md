@@ -121,6 +121,16 @@ Debugging narratives, query output, stack traces and log dumps do not belong in 
 go in the PR, a commit, or nowhere. A `tasks.md` growing past **~50 KB** is a smell: say so
 and trim it, because the next design, the audit and the archive harvest all read it.
 
+## File names
+
+A file name says what the file is for, never how it is written: one role per file. The
+kind vocabulary — every backend kind with its one folder, `commons/` / `libs/` / `shared/`,
+the frontend `mappers/` and `utils/` — lives in the stack rules (`rules/backend.md` and
+`rules/frontend.md`, "Where things go"), and must match each package's `POLICIES.md`
+word for word on kind names. When a task names a new file, it uses that vocabulary:
+`core/<name>.calc.ts`, never `.functions.ts` or `.utils.ts`. The naming gate refuses new paths that break it, and
+the db-access check refuses database calls outside a repository.
+
 ## Changes spanning backend and frontend
 
 Backend (`backend/`, NestJS + TypeORM) and frontend (`frontend/`, Next.js) are **packages

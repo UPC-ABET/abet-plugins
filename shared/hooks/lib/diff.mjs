@@ -1,5 +1,6 @@
 /**
- * Unified-diff parsing shared by the audit scanners.
+ * Unified-diff parsing shared by the audit scanners and the pre-commit gate (it lives with the
+ * hooks because the Claude plugin ships `hooks/` only).
  */
 
 /**

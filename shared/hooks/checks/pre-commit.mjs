@@ -20,6 +20,7 @@
  * Returns `{ ok, message, notes }`. `ok: false` means block, with `message` explaining why.
  */
 import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join, relative } from 'node:path';
 import { BASE_BRANCH } from '../lib/branches.mjs';
 import { isAuthored } from '../lib/paths.mjs';
@@ -27,6 +28,8 @@ import { resolveTool, readPackageJson, runNode, git, excerpt } from '../lib/tool
 import { findWorkspacePackages, packageFor } from '../lib/workspace.mjs';
 import { scanDiff } from '../lib/secrets.mjs';
 import { checkNewFiles } from './file-naming.mjs';
+import { findDbAccess, isDbAccessExempt } from './db-access.mjs';
+import { addedLines } from '../lib/diff.mjs';
 
 const CODE_EXT = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 const FORMAT_EXT = /\.(ts|tsx|js|jsx|mjs|cjs|json|md|css|scss|ya?ml)$/;
@@ -58,6 +61,12 @@ function fixHint(label, pkg, ...candidates) {
 
 const block = (message) => ({ ok: false, message, notes: [] });
 
+/** The staged blob of `path`, untrimmed so line numbers hold; null when it cannot be read. */
+function stagedContent(root, path) {
+  const res = spawnSync('git', ['show', `:${path}`], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+  return res.status === 0 ? res.stdout : null;
+}
+
 export function runPreCommitChecks(root, env = process.env) {
   const notes = [];
   const done = () => ({ ok: true, message: '', notes });
@@ -83,19 +92,43 @@ export function runPreCommitChecks(root, env = process.env) {
     );
   }
 
-  // --- 1b. naming of newly added module files ---------------------------------
-  // Added files only: legacy files that predate the `<name>.<kind>.ts` vocabulary must
-  // not block every commit that happens to touch them.
+  // --- 1b. naming of newly added files ----------------------------------------
+  // Added and renamed paths only: a `git mv` is a new path and must land on an allowed
+  // kind, while legacy files that predate the standard must not block every commit that
+  // happens to touch them.
   if (env.ABET_SKIP_NAMING !== '1') {
-    const added = git(root, ['diff', '--cached', '--name-only', '--diff-filter=A'])
+    const added = git(root, ['diff', '--cached', '--name-only', '-M', '--diff-filter=AR'])
       .split('\n').map((s) => s.trim()).filter(Boolean);
-    const misnamed = checkNewFiles(added);
+    const misnamed = checkNewFiles(added, (p) => stagedContent(root, p));
     if (misnamed.length > 0) {
       const list = misnamed.slice(0, 10).map((m) => `  ${m.path}\n    ${m.problem}`).join('\n');
       return block(
-        `${misnamed.length} new file(s) break the module file-naming convention.\n${list}\n\n` +
+        `${misnamed.length} new file(s) break the file-naming standard.\n${list}\n\n` +
         'Rename them (`git mv`), stage the result, and commit again.'
       );
+    }
+  }
+
+  // --- 1c. database access outside a repository (added lines only) -------------
+  if (env.ABET_SKIP_DB_ACCESS !== '1') {
+    const candidates = staged.filter((f) => !isDbAccessExempt(f));
+    if (candidates.length > 0) {
+      const added = addedLines(git(root, ['diff', '--cached', '-U0', '--', ...candidates]));
+      const hits = [];
+      for (const [file, lines] of added) {
+        const text = stagedContent(root, file);
+        if (text == null) continue;
+        for (const h of findDbAccess({ file, text, addedNums: new Set(lines.map((l) => l.n)) })) {
+          if (h.severity === 'block') hits.push({ file, ...h });
+        }
+      }
+      if (hits.length > 0) {
+        const list = hits.slice(0, 10).map((h) => `  ${h.file}:${h.line} — ${h.text}\n    ${h.why}`).join('\n');
+        return block(
+          `${hits.length} database access(es) outside a repository in the staged changes.\n${list}\n\n` +
+          'Move each into the module repository and call it from there, stage the result, and commit again.'
+        );
+      }
     }
   }
 

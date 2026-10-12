@@ -51,7 +51,9 @@ task file with no checkboxes, routes or DTOs changed with `openapi.json` untouch
 `CONTEXT.md` that name something this diff newly uses, each a candidate stale statement —
 `security` — pattern hits against the team's own auth, scope and SQL rules, plus secrets and
 new dependencies — `reuse` — code this diff copies, counted across the whole repo, and
-(`reuse.helpers`) helpers, types and constants it re-declares by name — and the
+(`reuse.helpers`) helpers, types and constants it re-declares by name — `naming` — new paths
+that break the file-naming standard, grandfathered kinds the diff grew, files holding several
+roles — `dbAccess` — database access added outside a repository — and the
 chosen `depth` with its `reasons`. Take its answers as given — do not re-derive them.
 If it prints `empty` there is nothing to audit; stop. If the file is missing, it errors, or
 it prints **nothing at all**, that is a failure, not an empty result: tell the user in one
@@ -148,7 +150,17 @@ codes that do not match the failure.
 
 ### Auditor B — architecture, dependencies, documentation
 Layering: does anything reach past its boundary? Are repositories used only from the
-layer allowed to use them? Module dependencies and cycles. New third-party dependencies —
+layer allowed to use them? Module dependencies and cycles.
+
+**Database access outside a repository.** The script's `dbAccess` lists what the diff adds
+outside `*.repository.ts` (and the `commons/` transaction runner, tests, `database/`,
+`tools/`): a value import of `DataSource` / `EntityManager` / `QueryRunner`, or a
+`.query(` / `.createQueryBuilder(` / `.getRepository(` / `.transaction(` call. A
+`block` hit is a **blocker**, reported as a policy violation quoting backend POLICIES "All
+database access lives in the repository". A `warn` hit (`import type { EntityManager }`)
+is fine when the value is passed straight through to a repository call; report it as
+**major** only when the file uses it any other way. Pre-existing access the diff did not
+add is not a finding. New third-party dependencies —
 justified, maintained, licensed, already-have-one-of-those?
 
 Then **documentation currency**, which is this auditor's most valuable job:
@@ -195,9 +207,10 @@ commented-out blocks — **major**, see the rule in this phase's preamble. Prema
 abstraction.
 
 **Duplication — the rule of three.** Two copies of a piece of logic are tolerated; the
-third is the trigger to extract it into a shared home: a function in
-`core/<module>.functions.ts` (or `libs/` when it crosses modules), a service, a repository
-method, or on the frontend a shared hook or component. Do not judge this from memory — the
+third is the trigger to extract it into a shared home: a file of the kind it is for
+(`core/<module>.calc.ts`, `.mapper.ts`, `.sql.ts`, ... — or the same kind in
+`libs/<topic>/` when it crosses modules), a service, a repository method, or on the
+frontend a shared hook or component. Do not judge this from memory — the
 script's `reuse` counted it across the whole repo:
 
 - `reuse.extract`: the diff makes the third (or later) copy. Confirm it is the same
@@ -227,6 +240,21 @@ original, `git grep` for an existing function that already does it: reusing what
 the cheaper fix than extracting a new one.
 Deep nesting. Primitive obsession. Leaky abstractions. `any` used to silence the
 typechecker. Inconsistent naming against the conventions in PROJECT_RULES.
+
+**File names — one role per file.** A file name says what the file is for, never how it is
+written (the kind table in the stack rules). The pre-commit gate refuses new paths that break
+it; the script's `naming` reports what the gate lets through:
+
+| `naming` entry | Severity | Report |
+| --- | --- | --- |
+| `newFiles` | **major** | a new or renamed path the gate would refuse (committed with the gate skipped): rename it as the message says |
+| `legacy-kind-grew` | minor | "legacy kind grew; move the touched symbols to `<suggested kind>`" — the diff added exports to a grandfathered `.functions.ts` / `.utils.ts` / `.transforms.ts`, or keys to a `config/strings/*.validation.ts` (→ `.messages.ts`). Never a blocker |
+| `mixed-roles` | suggestion | a new or grown file over ~300 lines whose exports fall into more than one role: split it by kind |
+| `shared-lib-pure` | minor | a new frontend `shared/lib/` file with no side effect: a pure function goes in `shared/utils/<functionName>.ts`. Confirm it is really pure first |
+| `utils-multiple-functions` | suggestion | a frontend `utils/` file exporting several functions: one function per file, named after it |
+
+The suggested kind comes from each export's name, which is a guess — correct it when the
+body says otherwise.
 
 ### Auditor E — security
 Run the native `/security-review` over the diff. On top of it: authentication and
