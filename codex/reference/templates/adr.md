@@ -6,8 +6,14 @@
 - **Tags**: <area>, <area>
 
 <!-- Status lifecycle: Proposed → Accepted → (Deprecated | Superseded by ADR-NNN).
-     Once Accepted, everything below is immutable. To change the decision, write a new
-     ADR that supersedes this one and edit only the Status line here.
+     The repo's docs/adr/README.md (Rules) governs what may change once Accepted:
+     - Decision reversed → a new ADR supersedes this one; here, edit only the Status line:
+       `Superseded by ADR-NNN (YYYY-MM-DD) — <one line on what changed>` (say which part,
+       for a partial supersession).
+     - Decision stands, a detail changed or something was learned → append a dated entry
+       to ## Amendments at the bottom. Context, Decision and Consequences are never
+       rewritten.
+     If the README has no Amendments rule, only the Status line may change.
      Use "Proposed (retroactive)" when documenting a decision already live in production. -->
 
 ## Context
@@ -53,3 +59,9 @@ One decision per ADR. If this section contains "and also", it is two ADRs.
 - PR #NNN — <what it did>
 - `openspec/changes/archive/<slug>/design.md` (or `openspec/changes/<slug>/` while in flight)
 - ADR-0NN — <related decision>
+
+## Amendments
+
+<!-- Append-only, oldest first. Only for refinements where the decision still stands:
+     - YYYY-MM-DD: <what changed and why> (<link to the change or ADR>) -->
+

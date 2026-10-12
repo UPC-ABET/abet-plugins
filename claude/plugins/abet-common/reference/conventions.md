@@ -198,7 +198,7 @@ stack-specific rules and map. Every skill reads the **root** docs plus the docs 
 | ---- | ----- | ---------- |
 | `docs/POLICIES.md` | Repo-wide mandatory rules — git, branches, PR base, promotion, openspec location, CI gates, env/secrets handling | Humans. Never a skill. |
 | `docs/CONTEXT.md` | Repo-wide topology — server, environments, ports, RDS, deploy pipeline, CI | `/abet-implement`, `/abet-audit-pr` flag staleness |
-| `docs/adr/` | Cross-cutting decisions, one numbered immutable file each | `/abet-adr` only |
+| `docs/adr/` | Cross-cutting decisions, one numbered file each — never rewritten once Accepted; superseded or amended per its `README.md` Rules, with an index of statuses and dates | `/abet-adr` only |
 | `backend/docs/POLICIES.md` | Backend's mandatory rules — naming, module layout, validation pattern, response format | Humans. Never a skill. |
 | `backend/docs/CONTEXT.md` | Backend's descriptive map — stack, structure, vocabulary, business rules | `/abet-implement`, `/abet-audit-pr` flag staleness |
 | `backend/docs/adr/` | Backend-only decisions | `/abet-adr` only |

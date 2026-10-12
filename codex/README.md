@@ -11,7 +11,7 @@ There is no plugin or hook mechanism, so:
 | Prompt | Profile | Purpose |
 | --- | --- | --- |
 | `/abet-address-review` | common | Work through review feedback on your own PR. |
-| `/abet-adr` | common | Write an Architecture Decision Record. |
+| `/abet-adr` | common | Write or change an Architecture Decision Record. |
 | `/abet-archive` | common | Post-merge bookkeeping. |
 | `/abet-audit-pr` | common | Pre-PR self-audit. |
 | `/abet-create-pr` | common | Open the pull request against develop with a fully-filled body, linking the openspec change. |
