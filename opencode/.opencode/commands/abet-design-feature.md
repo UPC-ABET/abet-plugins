@@ -23,9 +23,18 @@ Resolve `<slug>` from the branch name; see the slug inference rules in
 
 Read, in this order: `proposal.md`; root `docs/POLICIES.md` and, for whichever package(s)
 `proposal.md` marks as affected, `backend/docs/POLICIES.md` and/or `frontend/docs/POLICIES.md`
-— **each in full**, because they hold every convention the design must respect; every ADR
-in `docs/adr/` (and the package's `adr/`) whose title touches this area; and the archived
-sibling change in `openspec/specs/` if the proposal identified prior art.
+— **each in full**, because they hold every convention the design must respect;
+`openspec/specs/<capability>/spec.md` for every capability on `proposal.md`'s **Specs
+affected** line — **in full**, because its rules, invariants and known edge cases are what
+the design must keep true (or knowingly change, saying so in the proposal); and every ADR
+in `docs/adr/` (and the package's `adr/`) that those specs link to or whose title touches
+this area.
+
+Read an archived change (`openspec/changes/archive/<slug>/`, or legacy
+`openspec/specs/<slug>/` — a folder with `proposal.md` and no `spec.md`) only for the
+history behind one specific decision a spec or the proposal points at. It is never current
+behaviour: a later change may have superseded it, and the capability spec is where that
+shows.
 
 Do not read `CONTEXT.md` whole — the backend's is ~100KB. Search root and package
 `CONTEXT.md` for the terms the proposal involves (modules, integrations, domain words).
@@ -105,11 +114,25 @@ From `plugins/abet-common/templates/design.md`. Sections:
 - **Backend** / **Frontend** — module, entity, migration, endpoint, guard, i18n keys. Use
   both H2 sections when `proposal.md` says both packages are affected; keep just the one
   that applies for a single-package change. `design.md` is one file, never duplicated.
+- **Endpoints and scope** (backend) — the table, one row per route added or changed **and
+  every sibling route on the same entity**: who may call it (JWT, machine), the permission,
+  where the scope comes from (or why the entity is global), how a by-id route proves the row
+  belongs to the caller's school, and that "not yours" answers like "not found". Read the
+  sibling routes to fill it; do not infer them. Scope gaps on sibling and machine routes are
+  the most frequent blocker the audit ledger records, and they are a design omission, not
+  a coding slip.
+- **Concurrency** — for each locking write: what it serialises against, lock order, and
+  its `lock_timeout` through the shared transaction wrapper. Delete when nothing locks.
+- **Reuse** — the shared helpers, SQL fragments, constants, types and test fixtures the
+  change will use, each with its path, found by `git grep` now rather than by the audit
+  later. A new CTE or constant that re-derives a business rule something else encodes is a
+  decision: justify it here or reuse the existing one.
 - **Cross-package mode** — sequential or parallel and why, where the contract lives (if
   any), and the ordering rule. Delete the section for a single-package change.
 - **Testing strategy** — which ACs get unit tests, which need integration, which are
   only verifiable by hand (those go in the runbook).
-- **Risks** — and the mitigation for each.
+- **Risks** — and the mitigation for each, including the per-request bound (rows, files,
+  array size) for anything that loops, locks or exports.
 - **Docs to update in this PR** — be specific. Vague entries here are why
   `docs/CONTEXT.md` goes stale.
 
@@ -127,6 +150,11 @@ order with the exact command to run, and its proposed **Commit** subject.
 
 The preamble is addressed to whoever executes it, and carries the repo's execution
 rules: how tests are run, what must not be run, and that commits are never autonomous.
+
+**tasks.md is a plan, not a work log.** Write tasks, not narrative, and leave out query
+output, logs and exploration notes — they belong in the design's reasoning or nowhere. If
+the file you are writing (or extending) is past **~50 KB**, flag it: that is a smell that
+it is carrying history it should not.
 
 ### 6. Decide whether a runbook is needed
 

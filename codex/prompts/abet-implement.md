@@ -34,6 +34,13 @@ a convention you will break; reading them after the audit is too late.
 (and the ADRs the design's **Read first** list points at) for the terms this task
 involves — the module, the integration, the domain words.
 
+For the behaviour you must not break, read `openspec/specs/<capability>/spec.md` for each
+capability on `proposal.md`'s **Specs affected** line first: its rules, invariants and
+known edge cases are current truth, and each edge case is one somebody already paid for.
+Open an archived change (`openspec/changes/archive/<slug>/`, or legacy
+`openspec/specs/<slug>/`) only for the history behind a specific decision — never as a
+description of how the code behaves now.
+
 ### 2. Batch the work
 
 Take tasks in order, 3–5 at a time. Do not attempt the whole milestone in one pass —
@@ -59,15 +66,22 @@ the task's own test command and report the result.
 
 1. Write or update the test named in the task. Run it. **Confirm it fails**, and for the
    right reason — a test that passes before the change tests nothing.
-2. **Search before you write.** For any helper, query, mapping or validation you are about
-   to add, `git grep` for one that already does it and use it. If you find one, use it.
+2. **Search before you write.** Start from the design's **Reuse** table. Then, before adding
+   any top-level function, constant or type, `git grep` its name **and** its most
+   distinctive literal (a type code, a table name, a header), and use what you find — in a
+   db-spec, that means `test/db/fixtures` before any local builder. Say in the task's retro
+   what you searched for and what you reused; the audit now checks these by name
+   (`reuse.helpers`), so a miss here comes back as a finding.
    If the logic you need already exists in **two** other places, your copy would be the
    third — extract it into one shared home (a function in `core/<module>.functions.ts`, or
    `libs/` when it crosses modules; a service or repository method; on the frontend a
    shared hook or component) and point all three at it, in this change. The audit counts
    copies across the repo and reports a third one as major; it is far cheaper to extract
    now than to be sent back.
-3. Implement the minimum that makes it pass.
+3. Implement the minimum that makes it pass. On the backend, keep the stack rules audits
+   most often find broken: every route on the entity takes the same scope as its siblings, every
+   DTO integer has `@Max` and every array `@ArrayMaxSize`, log text goes through
+   `JSON.stringify`, and no `err.message` reaches a response. The stack rules file says why.
 4. Re-run. Green.
 5. Run the surrounding suite for that module to catch collateral damage.
 
@@ -99,6 +113,11 @@ Then append a short retro as a blockquote when there is anything worth knowing:
 
 Record the real numbers and the real blockers. A retro that says "went fine" on a task
 that took three attempts is worse than no retro.
+
+Keep it to a few lines. **tasks.md is a plan, not a work log**: the debugging narrative,
+query output, stack traces and log dumps behind a retro do not go in it — the conclusion
+does. If `tasks.md` grows past **~50 KB**, flag it to the user as a smell; the audit, the
+next design and the archive harvest all read this file.
 
 ### 5. Handle work that was not planned
 

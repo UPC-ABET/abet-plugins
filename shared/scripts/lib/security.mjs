@@ -12,7 +12,10 @@
 
 const SCOPE = '(schoolId|modalityTypeId|academicPeriodId)';
 const SOURCE = /\.[jt]sx?$/;
-const TEST = /\.(spec|test)\.[jt]sx?$/;
+/** `x.spec.ts`, `x.test.ts` and `x.repository.db-spec.ts` — the hyphen form was being scanned. */
+export const TEST = /[.-](spec|test)\.[jt]sx?$/;
+/** Migrations and seed scripts: their SQL values are their own constants, not input. */
+const MIGRATION = /(^|\/)migrations\/|(^|\/)database\/scripts\/seeds\//;
 
 /** Single-line rules: `re` runs on every added line of a file matching `files`. */
 export const LINE_RULES = [
@@ -21,12 +24,6 @@ export const LINE_RULES = [
     files: /\.controller\.ts$/,
     re: new RegExp(`@(Query|Body|Param)\\(\\s*['"]${SCOPE}['"]`),
     why: 'School, modality and academic period come from the X-* headers through @SchoolId() / @ModalityTypeId() / @AcademicPeriodId(), never the query, body or route params. A caller can otherwise ask for another school\'s data.',
-  },
-  {
-    id: 'scope-in-dto',
-    files: /\.dtos?\.ts$/,
-    re: new RegExp(`^\\s*${SCOPE}\\??!?\\s*:`),
-    why: 'Scope must not be a DTO field; the controller injects it from the header and passes it to the service.',
   },
   {
     id: 'public-route',
@@ -43,7 +40,8 @@ export const LINE_RULES = [
   {
     id: 'process-env',
     files: /\.[jt]sx?$/,
-    skip: /(^|\/)(main|env\.config|[\w.-]*config)\.[jt]s$|(^|\/)(database|scripts|tools)\//,
+    // test/db/ is the db-spec harness, which POLICIES lets read the environment directly
+    skip: /(^|\/)(main|env\.config|[\w.-]*config)\.[jt]s$|(^|\/)(database|scripts|tools)\/|(^|\/)test\/db\//,
     re: /\bprocess\.env\b/,
     why: 'POLICIES: "Don\'t use process.env directly — use ConfigService". Unvalidated env access also skips the Zod-validated schema.',
   },
@@ -83,6 +81,28 @@ export const LINE_RULES = [
     re: /\b(exec|execSync|spawn|spawnSync)\s*\(\s*`[^`]*\$\{/,
     why: 'Interpolating a value into a shell command is command injection unless it is fixed and trusted.',
   },
+  // Promoted from the audit ledger (6 findings, 5 changes): request text, stored names and
+  // driver errors interpolated raw into a log line can forge log entries and leak internals.
+  {
+    id: 'log-unescaped-input',
+    files: SOURCE,
+    re: /(console\.\w+|logger\.\w+)\s*\(\s*`[^`]*\$\{(?!\s*JSON\.stringify)[^}]*(\b(err|error|e)\.message\b|\b(query|dto|body|params)\.\w+|\.name\b)/,
+    why: 'Request, admin-entered or driver text interpolated raw into a log line: a newline in it forges a log entry, and a driver message can leak schema details. Wrap the value in JSON.stringify(), or log a fixed message plus a structured field.',
+  },
+  {
+    id: 'error-message-in-response',
+    files: SOURCE,
+    re: /description\s*:\s*[\w.?]*\b(err|error|e)\.message\b/,
+    why: 'An exception description built from err.message returns the driver\'s or library\'s internals to the client. Return a fixed i18n key; keep the message in the log (escaped).',
+  },
+  // Promoted from the audit ledger (review-85 blocker): `($1::int[] IS NULL OR school_id = ANY($1))`
+  // turns a missing scope into "every school".
+  {
+    id: 'nullable-scope-predicate',
+    files: /\.(sql|repository)\.ts$/,
+    re: /\$\d+::int\[\]\s+IS\s+NULL\s+OR\b.*\b\w*(school|program|faculty|modality|period)\w*/i,
+    why: 'A NULL scope parameter disables the scope filter: any path that passes null (an "all" flag, a missing header) reads every school\'s rows. Make the scope parameter mandatory, and give genuinely global reads their own query.',
+  },
 ];
 
 /** Cache calls: `this.bandCache.get(courseId)`, `cache.set(key, …)`. */
@@ -113,9 +133,37 @@ export function firstArgument(s, from) {
   return s.slice(from);
 }
 
+/** `${…}` substitutions in `s`, each as `{ expr, placeholder }`, tracking nested braces. */
+export function substitutions(s) {
+  const out = [];
+  for (let i = s.indexOf('${'); i >= 0; i = s.indexOf('${', i + 2)) {
+    let depth = 0;
+    let j = i + 1;
+    for (; j < s.length; j++) {
+      if (s[j] === '{') depth++;
+      else if (s[j] === '}' && --depth === 0) break;
+    }
+    out.push({ expr: s.slice(i + 2, j).trim(), placeholder: s[i - 1] === '$' });
+  }
+  return out;
+}
+
+/**
+ * A substitution that cannot carry a value: a `$${n}` parameter placeholder, an ALL_CAPS
+ * constant (or a member of one), or a call to a function that returns a SQL fragment
+ * (`chartAncestryCte(...)`) — those build SQL with their own `$n` placeholders. These made up
+ * most of the rule's false positives in the ledger.
+ */
+const SAFE_SUBSTITUTION = [
+  /^[A-Z][A-Z0-9_]*(\.[A-Za-z0-9_]+)*$/,
+  /^[\w.]+(Cte|Sql|Join|Fragment|Clause|Columns|Select|Where)\(/,
+];
+const safeSubstitution = ({ expr, placeholder }) => placeholder || SAFE_SUBSTITUTION.some((re) => re.test(expr));
+
 /** Does a SQL first argument build the statement from values instead of parameters? */
 export function interpolatesSql(arg) {
-  if (/`[^`]*\$\{/.test(arg)) return true; // template literal with a substitution
+  // template literal with a substitution that may carry a value
+  for (const tpl of arg.match(/`[^`]*`/g) ?? []) if (!substitutions(tpl).every(safeSubstitution)) return true;
   // string concatenation outside quotes: 'SELECT ... ' + id
   let quote = null;
   for (let i = 0; i < arg.length; i++) {
@@ -219,13 +267,18 @@ const SIGNATURE = /^\s*(?:(?:public|private|protected|static|async)\s+)*[A-Za-z_
  * (it can never succeed), not an open door. Also flags @ApiTokenAuth() with
  * @SkipPermissions(), which POLICIES forbids outright.
  */
-export function findRouteAuthIssues({ text, addedNums }) {
+/**
+ * Every endpoint method of a controller: `{ up, down, stack, params, name, verb, touched }`.
+ * `up`..`down` are 0-based line indexes of its decorators through its signature line, `stack`
+ * that text, `params` its whole parameter list (which may run over several lines), and
+ * `touched` whether the diff added any line of it.
+ */
+export function endpoints(text, addedNums) {
   const lines = text.split('\n');
-  const firstClass = lines.findIndex((l) => /^\s*export\s+(abstract\s+)?class\b/.test(l));
-  const classLevel = firstClass >= 0 && AUTH.test(lines.slice(0, firstClass).join('\n'));
-  const issues = [];
+  const starts = [0];
+  for (const l of lines) starts.push(starts[starts.length - 1] + l.length + 1);
+  const out = [];
   const seen = new Set();
-
   for (let i = 0; i < lines.length; i++) {
     if (!ENDPOINT.test(lines[i]) || CLASS_LEVEL.test(lines[i])) continue;
     let up = i;
@@ -234,10 +287,29 @@ export function findRouteAuthIssues({ text, addedNums }) {
     while (down + 1 < lines.length && down - i < 15 && !SIGNATURE.test(lines[down])) down++;
     if (seen.has(down)) continue; // one method, several decorators
     seen.add(down);
-    if (![...Array(down - up + 1).keys()].some((k) => addedNums.has(up + k + 1))) continue; // untouched by the diff
+    const sig = SIGNATURE.exec(lines[down]);
+    const open = sig ? starts[down] + sig[0].length - 1 : -1;
+    const params = open >= 0 ? text.slice(open + 1, closingBracket(text, open, '(', ')')) : '';
+    const paramsEnd = text.slice(0, open + 1 + params.length).split('\n').length - 1;
+    out.push({
+      up, down, params,
+      stack: lines.slice(up, down + 1).join('\n'),
+      name: /([A-Za-z_$][\w$]*)\s*\(/.exec(lines[down])?.[1] ?? 'method',
+      verb: /@(Get|Post|Put|Patch|Delete)\(/.exec(lines.slice(up, down + 1).join('\n'))?.[1] ?? null,
+      touched: [...Array(Math.max(down, paramsEnd) - up + 1).keys()].some((k) => addedNums.has(up + k + 1)),
+    });
+  }
+  return out;
+}
 
-    const stack = lines.slice(up, down + 1).join('\n');
-    const name = /([A-Za-z_$][\w$]*)\s*\(/.exec(lines[down])?.[1] ?? 'method';
+export function findRouteAuthIssues({ text, addedNums }) {
+  const lines = text.split('\n');
+  const firstClass = lines.findIndex((l) => /^\s*export\s+(abstract\s+)?class\b/.test(l));
+  const classLevel = firstClass >= 0 && AUTH.test(lines.slice(0, firstClass).join('\n'));
+  const issues = [];
+
+  for (const { up, stack, name, touched } of endpoints(text, addedNums)) {
+    if (!touched) continue;
     if (/@ApiTokenAuth\b/.test(stack) && /@SkipPermissions\b/.test(stack)) {
       issues.push({ rule: 'api-token-skip-permissions', line: up + 1, text: name,
         why: 'POLICIES: never combine @ApiTokenAuth() with @SkipPermissions() — a machine principal would be authorised with no scope check at all.' });
@@ -248,6 +320,89 @@ export function findRouteAuthIssues({ text, addedNums }) {
     }
   }
   return issues;
+}
+
+const TAKES_SCOPE = /@(SchoolId|AcademicPeriodId|ModalityTypeId)\(/;
+
+/**
+ * Routes that skip the scope their siblings take. Promoted from the audit ledger (13 findings
+ * in 6 changes, 2 blockers): one route family gets `@SchoolId()` and the write next to it on
+ * the same entity does not, or a machine route (`@ApiTokenAuth()`) returns per-school data
+ * with no school at all. Only controllers where some route does take a scope are judged: a
+ * controller of global catalogues (periods, campuses) takes none, and replaying the rule over
+ * ACC-SYS history without that condition flagged every one of its routes.
+ */
+export function findRouteScopeIssues({ text, addedNums }) {
+  const all = endpoints(text, addedNums);
+  const siblingsScoped = all.some((e) => TAKES_SCOPE.test(e.params));
+  const classMachine = /@ApiTokenAuth\b/.test(text.split(/^\s*export\s+(?:abstract\s+)?class\b/m)[0]);
+  const issues = [];
+  for (const e of all) {
+    if (!e.touched || TAKES_SCOPE.test(e.params) || !siblingsScoped) continue;
+    if (classMachine || /@ApiTokenAuth\b/.test(e.stack)) {
+      issues.push({ rule: 'machine-route-without-scope', line: e.up + 1, text: e.name,
+        why: `${e.name} admits a machine principal (@ApiTokenAuth) and takes no @SchoolId(): if it returns per-school or personal data, any token holder reads every school. Take the school from the header like the other per-school routes, or record why the data is global.` });
+    } else if (/^(Post|Put|Patch|Delete)$/.test(e.verb ?? '')) {
+      issues.push({ rule: 'route-scope-inconsistent', line: e.up + 1, text: e.name,
+        why: `${e.name} writes without @SchoolId() while other routes in this controller take it: a by-id write that never checks the row's school lets one school change another's data. Take the scope and check the row belongs to it, or record why this entity is global.` });
+    }
+  }
+  return issues;
+}
+
+const PROPERTY = /^\s*(?:readonly\s+)?([A-Za-z_$][\w$]*)[?!]?\s*:\s*[^=;]+;\s*$/;
+const RESPONSE_DTO = /(Response|Ref|View|Out(?:put)?)Dto$/;
+
+/**
+ * Per-property checks over a DTO file, judged on the property's whole decorator block:
+ *   dto-int-unbounded    @IsInt without @Max — an id past int4 reaches SQL and comes back a 500
+ *   dto-array-unbounded  @IsArray / `each: true` without @ArrayMaxSize — the request picks the loop size
+ *   scope-in-dto         a scope field on an input DTO (response DTOs legitimately carry one)
+ * The first two are promoted from the audit ledger (6 findings in 5 changes).
+ */
+export function findDtoIssues({ text, addedNums }) {
+  const issues = [];
+  let cls = null;
+  let block = [];
+  let depth = 0;
+  text.split('\n').forEach((line, idx) => {
+    const n = idx + 1;
+    const c = /^\s*export\s+(?:abstract\s+)?class\s+([\w$]+)/.exec(line);
+    if (c) { cls = c[1]; block = []; depth = 0; return; }
+    if (depth > 0 || /^\s*@/.test(line)) { // a decorator, or the rest of one spanning lines
+      block.push({ n, line });
+      depth += (line.match(/\(/g) ?? []).length - (line.match(/\)/g) ?? []).length;
+      return;
+    }
+    const p = PROPERTY.exec(line);
+    if (!p || !cls) { block = []; return; }
+    const decorators = block.map((b) => b.line).join('\n');
+    const touched = addedNums.has(n) || block.some((b) => addedNums.has(b.n));
+    block = [];
+    if (!touched) return;
+    const at = (rule, why) => issues.push({ rule, line: n, text: `${cls}.${p[1]}`, why });
+    if (/@IsInt\(/.test(decorators) && !/@Max\(/.test(decorators)) {
+      at('dto-int-unbounded', '@IsInt() with no @Max(): a value past 2147483647 passes validation and fails in SQL as a 500. Add @Max() (2147483647 for an id).');
+    }
+    if ((/@IsArray\(/.test(decorators) || /each\s*:\s*true/.test(decorators)) && !/@ArrayMaxSize\(/.test(decorators)) {
+      at('dto-array-unbounded', 'An array with no @ArrayMaxSize(): the caller chooses how many items the handler loops, locks or queries over. Add a bound.');
+    }
+    if (new RegExp(`^${SCOPE}$`).test(p[1]) && !RESPONSE_DTO.test(cls)) {
+      at('scope-in-dto', 'Scope must not be an input DTO field; the controller injects it from the header and passes it to the service.');
+    }
+  });
+  // One hit per rule per file, naming every property: a new DTO file can add dozens of ids,
+  // and one row each would crowd every other finding out of the scanner's list.
+  const byRule = new Map();
+  for (const i of issues) {
+    const g = byRule.get(i.rule);
+    if (!g) byRule.set(i.rule, { ...i, fields: [i.text] });
+    else g.fields.push(i.text);
+  }
+  return [...byRule.values()].map(({ fields, ...i }) => ({
+    ...i,
+    text: `${fields.slice(0, 6).join(', ')}${fields.length > 6 ? `, … (${fields.length} in all)` : ''}`,
+  }));
 }
 
 /**
@@ -280,7 +435,9 @@ export function scanSecurity({ added, readFile }) {
       const at = joined.indexOf('.query(', from);
       if (at < 0) break;
       const start = at + '.query('.length;
-      if (interpolatesSql(firstArgument(joined, start))) {
+      const arg = firstArgument(joined, start);
+      // a migration's or seed's values are its own constants; only the environment is input there
+      if (MIGRATION.test(file) ? /\bprocess\.env\b/.test(arg) && interpolatesSql(arg) : interpolatesSql(arg)) {
         const before = joined.slice(0, at).split('\n').length - 1;
         push(file, lines[Math.min(before, lines.length - 1)].n, 'sql-interpolation', lines[Math.min(before, lines.length - 1)].text,
           'The statement is built from values instead of $1 parameters: SQL injection unless every value is fixed and trusted.');
@@ -300,8 +457,15 @@ export function scanSecurity({ added, readFile }) {
       const text = readFile(file);
       if (text) {
         const addedNums = new Set(lines.map((l) => l.n));
-        for (const i of findRouteAuthIssues({ text, addedNums })) push(file, i.line, i.rule, i.text, i.why);
+        for (const i of [...findRouteAuthIssues({ text, addedNums }), ...findRouteScopeIssues({ text, addedNums })]) {
+          push(file, i.line, i.rule, i.text, i.why);
+        }
       }
+    }
+
+    if (/\.dtos?\.ts$/.test(file)) {
+      const text = readFile(file);
+      if (text) for (const i of findDtoIssues({ text, addedNums: new Set(lines.map((l) => l.n)) })) push(file, i.line, i.rule, i.text, i.why);
     }
   }
   return hits;

@@ -35,10 +35,19 @@ The third bucket is the reason this skill exists.
 
 A comment belongs there when implementing it would: contradict an accepted ADR, change
 behaviour the proposal explicitly scoped in or out, alter an API contract the frontend
-already consumes, or reverse something a previous PR deliberately changed. Check
-`git log` and the relevant `docs/adr/`, `backend/docs/adr/` or `frontend/docs/adr/` before
-assuming a reviewer's suggestion is simply an improvement — the "obvious" fix has
-sometimes already been tried and reverted for a reason that is not visible in the diff.
+already consumes, or reverse something a previous PR deliberately changed. Before
+assuming a reviewer's suggestion is simply an improvement, check, in this order:
+
+1. `openspec/specs/<capability>/spec.md` for the capabilities the change touches (the
+   proposal's **Specs affected** line) — a suggestion that breaks a listed rule, invariant
+   or known edge case is an escalation, not an improvement.
+2. The relevant `docs/adr/`, `backend/docs/adr/` or `frontend/docs/adr/`, and `git log`.
+3. Only when a spec or ADR links to one, the archived change
+   (`openspec/changes/archive/<slug>/`, or legacy `openspec/specs/<slug>/`) for the history
+   behind that decision. It explains why; it does not say how the code behaves now.
+
+The "obvious" fix has sometimes already been tried and reverted for a reason that is not
+visible in the diff.
 
 For these, reply with the context and ask the reviewer to decide. Do not implement and
 do not silently decline.

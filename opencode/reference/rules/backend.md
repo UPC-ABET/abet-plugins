@@ -93,6 +93,13 @@ for one that already exists. The audit counts copies across the whole repo and r
 third one as **major**. Blocks repeated across many modules by convention (the validation
 skeleton) are the pattern, not duplication.
 
+Short copies count too, and the audit checks them by name: before adding any top-level
+function, constant or type, `git grep` its name **and** its most distinctive literal (a type
+code, a table name, a header). Use what exists: the shared SQL fragments in `libs/` (the
+chart-ancestry climb, shared joins) instead of a new CTE that re-derives a business rule,
+`TYPE_CODES` instead of a `'TGnnn-Tnnn'` literal, the existing `import('<pkg>')` wrapper
+instead of a second one. Say in the task's retro what you searched for and what you reused.
+
 ### Repository boundary
 All database access lives in `core/<module>.repository.ts`. A service must not inject
 `DataSource` or `EntityManager`, must not call `.query(...)`, and must not build query
@@ -125,6 +132,18 @@ This is the highest-value thing to audit on this codebase. Scope is request-deri
 anything that crosses into a cache key, a background job, or a shared singleton and drops
 it will serve one school's data to another — silently, and correctly-looking.
 
+The shapes that keep coming back in audits:
+
+- **Siblings agree.** When one route on an entity takes `@SchoolId()`, every route on that
+  entity does — the write next to a scoped read is the one that gets forgotten.
+- **A by-id write proves ownership.** An id from the path or body is checked to belong to
+  the caller's school before the write, and "not yours" answers exactly like "does not
+  exist", so the route cannot be used to discover ids.
+- **Machine routes are scoped too.** An `@ApiTokenAuth()` route returning per-school or
+  personal data takes `@SchoolId()` like any other.
+- **A scope parameter is never nullable in SQL.** `($1::int[] IS NULL OR school_id = ANY($1))`
+  turns a missing scope into every school. Genuinely global reads get their own query.
+
 ### i18n
 User-facing strings are keys, never raw text: `error.<module>.<key>`, `success.<type>`.
 Keys are declared as constants in `config/strings/<module>.validation.ts`. A hardcoded
@@ -137,6 +156,22 @@ throwing `DomainError`. The service calls validation before the CRUD operation.
 
 Every `core/<module>.validation.ts` must have a matching `.spec.ts`. That is the one test
 file the audit will always look for.
+
+Every input is bounded at the DTO: `@IsInt()` comes with `@Max()` (`2147483647` for an id —
+past int4 it fails in SQL as a 500), and every array with `@ArrayMaxSize()`, because
+otherwise the caller chooses how many items the handler loops, locks or queries over.
+
+### Logs and error responses
+- Text from a request, an admin-entered field or a driver error goes into a log line only
+  through `JSON.stringify(...)`: a raw newline forges a log entry.
+- Never put `err.message` in an exception's `description` or a 5xx `errors` array — it
+  returns the library's internals to the client. Return the i18n key; log the detail.
+
+### Transactions and locks
+Run a locking write through the shared transaction wrapper (`runInTransaction` with
+`lockTimeoutMs`), never by setting `lock_timeout` by hand or overriding
+`runInTransaction` in a repository. When a change takes more than one lock, the design says
+what each serialises against and in which order they are taken.
 
 ### Performance
 - TypeORM relation loading inside a loop is the standard N+1 here. Load with the relation
@@ -168,7 +203,8 @@ the value decorator, or the frontend cannot see that the endpoint requires them.
 
 ### Env
 Every variable is declared in `backend/src/commons/configs/env.config.ts` with Zod.
-Required vars fail at bootstrap. Reading `process.env` directly anywhere else is a finding.
+Required vars fail at bootstrap. Reading `process.env` directly anywhere else is a finding,
+except in the db-spec harness under `backend/test/db/`.
 
 ## Testing
 
@@ -176,6 +212,10 @@ Required vars fail at bootstrap. Reading `process.env` directly anywhere else is
 repository (`{ findOneByCondition: jest.fn(), findOneById: jest.fn() }`), asserting
 `resolves.toBeUndefined()` on the pass path and `rejects.toThrow(DomainError)` on the
 fail path.
+
+DB specs (`*.db-spec.ts`) seed only through `backend/test/db/fixtures.ts`. If a builder is
+missing, add it there — never as a local `insertX` / `seedX` function in the spec, and never
+as a raw `INSERT INTO organization.*`. Two specs with their own builders drift apart.
 
 Watch for the fixture trap: a factory default that makes the condition under test a
 no-op. A test that passes for the wrong reason is worse than no test, and it is the

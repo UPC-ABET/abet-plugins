@@ -2,7 +2,7 @@
 | ----- | --- | ----- |
 | `area` | all | `security` or `reuse` |
 | `source` | all | `mechanical` — a script hit (`security`, `reuse`); `judgment` — you found it |
-| `rule` | mechanical | the script's rule id from `security.hits[].rule`, e.g. `cache-key-without-scope`; for a `reuse.extract` entry always `rule-of-three` |
+| `rule` | mechanical | the script's rule id from `security.hits[].rule` or `reuse.helpers[].rule`, e.g. `cache-key-without-scope`, `redeclared-export`; for a `reuse.extract` entry always `rule-of-three` |
 | `category` | all | `scope-leak` `authz` `authn` `idor` `injection` `secrets` `crypto` `data-exposure` `file-handling` `dos` `ssrf` `deserialization` `logging` `config` `dependency` `race` `export-injection` `duplication` `existing-helper` `other` |
 | `severity` | confirmed | `blocker` `major` `minor` `suggestion` |
 | `verdict` | all | `confirmed`, or `false-positive` for a mechanical hit you dropped |

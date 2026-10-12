@@ -29,20 +29,31 @@ Before asking the requester anything, read what the repo already tells you:
   enough to read. The packages' `CONTEXT.md` files are not (the backend's is ~100KB):
   search them for the terms the request involves instead of reading them whole.
 - `docs/adr/` — index the titles; note any cross-cutting ADR that touches this area.
-- `openspec/specs/` — has something like this been done before? Prior art is the
-  fastest way to a good proposal, and the design will want to point back at it.
+- `openspec/specs/` — list the capability folders and decide which capabilities the
+  request touches; those become the **Specs affected** line. Then read
+  `openspec/specs/<capability>/spec.md` **in full** for each one. It is the current truth
+  about what the capability does and which rules it must keep, so "What already exists"
+  starts from it, not from an archived change. If a capability has no spec yet (or the
+  repo still uses the legacy layout, where `openspec/specs/` holds archived change folders
+  with a `proposal.md` and no `spec.md`), say so and work from the code.
+- `openspec/changes/archive/` (legacy: `openspec/specs/<slug>/`) — only when a spec links
+  to a past change and you need the reasoning behind that specific decision. An archived
+  change is history: never quote it as current behaviour, because a later change may have
+  superseded it.
 
 Then read the actual code the request implicates. You cannot write "What already
-exists" from imagination.
+exists" from imagination, and where the code and a spec disagree, say so — the code is
+what runs, and the stale spec is a finding for the next archive.
 
 ### 2. Derive the slug
 
 Plain kebab-case, 3–6 words, naming the thing rather than the action:
 `bulk-edit-rubric-weights`, not `add-bulk-editing-feature`.
 
-Check for collisions against **both** `openspec/changes/` and `openspec/specs/`.
-A slug that already exists in `specs/` means this is likely an extension of prior work —
-say so, and link it.
+Check for collisions against in-flight changes (`openspec/changes/<slug>/`) and archived
+ones (`openspec/changes/archive/<slug>/`, or legacy `openspec/specs/<slug>/`). A slug
+that is already archived means this is likely an extension of prior work — say so, and
+link it. Never use `archive` as a slug.
 
 ### 3. Interrogate the request
 
@@ -57,6 +68,7 @@ the code, note it and move on; do not perform an interview for its own sake.
 | Non-goals | What is explicitly out of scope, so review does not drift into it. |
 | Acceptance criteria | Testable Given/When/Then. Each one must be verifiable by a human or a test. |
 | Packages affected | Backend only, frontend only, or both. This decides the `## Backend`/`## Frontend` sectioning in design. |
+| Specs affected | The capabilities (`openspec/specs/<capability>/`) whose behaviour or rules this change alters or adds to — existing names where one fits, a proposed new kebab-case name otherwise — or `none`. `/abet-archive` updates exactly these after merge. |
 | Scope | For every table the change reads, joins or aggregates: how the caller's school reaches those rows, and whether one row or group can belong to **several** schools (a section under programs of two schools). An aggregate over a shared table must count only the caller's school's rows, and that case gets its own AC. Filled into the proposal's **Scope check** table. |
 | Dependencies | Other changes, data migrations, external systems (Banner, uPlanner, Azure, S3). |
 | Risks | What could break, what is uncertain, what has bitten us here before. |

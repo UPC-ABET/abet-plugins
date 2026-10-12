@@ -28,10 +28,14 @@ import { isMain } from '../../scripts/lib/is-main.mjs';
 import { checkLean, openQuestions, scopeCheckRows, BOUNDS } from '../../scripts/lib/lean-gate.mjs';
 import { validateRecord, aggregate, renderReport } from '../../scripts/lib/ledger.mjs';
 import { findClones } from '../../scripts/lib/clones.mjs';
-import { scanSecurity, findRouteAuthIssues, findUnusedScopeParams } from '../../scripts/lib/security.mjs';
+import { scanSecurity, findRouteAuthIssues, findUnusedScopeParams, findDtoIssues } from '../../scripts/lib/security.mjs';
+import { buildIndex, findHelperReuse } from '../../scripts/lib/helpers.mjs';
 import { addedLines } from '../../scripts/lib/diff.mjs';
 import { measure, chooseDepth, countTasks, packageOf, newTerms, findDocHits, headingsOf, addedByFile, exportedNames, findDeadCode, RISKY } from '../../scripts/audit-scope.mjs';
 import { findWorkspacePackages, packageFor } from '../lib/workspace.mjs';
+import { inFlightChanges, archivedChanges, isInFlight } from '../../scripts/lib/changes.mjs';
+import { findSlug } from '../../scripts/lean-gate.mjs';
+import { ledgerFiles, ledgerPath } from '../../scripts/audit-ledger.mjs';
 
 const HOOKS = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -929,7 +933,10 @@ const S = 'backend/src/modules/a/b/api/b.service.ts';
 check('security: schoolId from @Query is flagged', scan(C, "async f(@Query('schoolId') s: number) {}").includes('scope-from-request'), true);
 check('security: schoolId from @Body is flagged', scan(C, "f(@Body('schoolId') s) {}").includes('scope-from-request'), true);
 check('security: @SchoolId() header decorator is fine', scan(C, 'async f(@SchoolId() schoolId: number) {}').includes('scope-from-request'), false);
-check('security: a scope field in a DTO is flagged', scan('backend/src/modules/a/b/model/b.dtos.ts', '\tschoolId: number;').includes('scope-in-dto'), true);
+check('security: a scope field in an input DTO is flagged',
+  scan('backend/src/modules/a/b/model/b.dtos.ts', 'export class CreateBDto {\n\t@IsInt()\n\t@Max(9)\n\tschoolId: number;\n}').includes('scope-in-dto'), true);
+check('security: a scope field in a response DTO is not',
+  scan('backend/src/modules/a/b/model/b.dtos.ts', 'export class BResponseDto {\n\tschoolId: number;\n}').includes('scope-in-dto'), false);
 check('security: @Public() is flagged for confirmation', scan(C, '@Public()').includes('public-route'), true);
 check('security: @SkipPermissions() is flagged', scan(C, '@SkipPermissions()').includes('skip-permissions'), true);
 check('security: raw process.env is flagged', scan(S, 'const k = process.env.KEY;').includes('process-env'), true);
@@ -1005,6 +1012,134 @@ export class XController {
 }
 check('security: addedLines numbers lines from the hunk header',
   addedLines('+++ b/x.ts\n@@ -1,0 +10,2 @@\n+a\n+b\n').get('x.ts').map((l) => l.n).join(','), '10,11');
+
+// ------------------------------------------- rules promoted or tightened from the ledger (0.8.0)
+console.log('ledger-driven rules');
+{
+  const R = 'backend/src/modules/a/b/core/b.repository.ts';
+  const q = (sql) => `await this.ds.query(\`${sql}\`, [x]);`;
+  // sql-interpolation: what is not a value
+  check('sql: a $${n} placeholder is not interpolation', scan(R, q('SELECT 1 WHERE id = $${i + 1}')).includes('sql-interpolation'), false);
+  check('sql: an ALL_CAPS constant is not interpolation', scan(R, q('SELECT ${TYPE_CODES.GRADE} FROM t')).includes('sql-interpolation'), false);
+  check('sql: a fragment builder is not interpolation', scan(R, q('WITH ${chartAncestryCte(2)} SELECT 1')).includes('sql-interpolation'), false);
+  check('sql: a value still is', scan(R, q('SELECT 1 WHERE id = ${id}')).includes('sql-interpolation'), true);
+  check('sql: one value among safe ones still is', scan(R, q('SELECT ${COLS} WHERE id = ${id}')).includes('sql-interpolation'), true);
+  const M = 'backend/src/database/migrations/1700-x.ts';
+  check('sql: a migration interpolating its own constants is not flagged',
+    scan(M, q('ALTER TABLE t ADD CONSTRAINT ${constraintName(lang)} CHECK (lang IN (${LANGUAGES}))')).includes('sql-interpolation'), false);
+  check('sql: a migration interpolating the environment is',
+    scan(M, q('ALTER ROLE ${process.env.DB_USER} SET x = 1')).includes('sql-interpolation'), true);
+  // test files and the db-spec harness
+  check('scan: a *.db-spec.ts file is a test and is not scanned',
+    scan('backend/src/m/x.repository.db-spec.ts', q('SELECT ${id}')).length, 0);
+  check('scan: test/db may read process.env', scan('backend/test/db/global-setup.ts', 'const u = process.env.DB_URL;').includes('process-env'), false);
+  check('scan: test/db still gets the SQL rule (the confirmed blocker)',
+    scan('backend/test/db/global-setup.ts', 'await c.query(`DROP DATABASE "${conn.database}"`);').includes('sql-interpolation'), true);
+  // logging and error responses
+  check('log: err.message interpolated raw is flagged', scan(R, 'this.logger.warn(`cache failed: ${err.message}`);').includes('log-unescaped-input'), true);
+  check('log: a stored name interpolated raw is flagged', scan(R, 'this.logger.log(`renamed ${school.name}`);').includes('log-unescaped-input'), true);
+  check('log: JSON.stringify makes it fine', scan(R, 'this.logger.warn(`cache failed: ${JSON.stringify(err.message)}`);').includes('log-unescaped-input'), false);
+  check('log: a fixed id is fine', scan(R, 'this.logger.log(`synced ${count} rows`);').includes('log-unescaped-input'), false);
+  check('response: err.message as an exception description is flagged',
+    scan(R, "throw new BadRequestException(key, { description: err.message, cause: err });").includes('error-message-in-response'), true);
+  // scope
+  check('scope: a nullable scope array predicate is flagged',
+    scan('backend/src/m/a/core/a.sql.ts', 'WHERE ($2::int[] IS NULL OR p.school_id = ANY($2))').includes('nullable-scope-predicate'), true);
+  check('scope: a nullable non-scope filter is not',
+    scan('backend/src/m/a/core/a.sql.ts', 'WHERE ($2::int[] IS NULL OR c.status_id = ANY($2))').includes('nullable-scope-predicate'), false);
+
+  const ctrl = (patchParams, extra = '') => [
+    "@Controller('charts')",
+    'export class ChartsController {',
+    "\t@Get(':id')",
+    "\t@RequirePermission('charts.read')",
+    "\tasync get(@Param('id') id: number, @SchoolId() schoolId: number) {}",
+    '',
+    "\t@Patch(':id')",
+    "\t@RequirePermission('charts.write')",
+    `\tasync update(${patchParams}) {}`,
+    extra,
+    '}',
+  ].join('\n');
+  check('routes: an unscoped write beside a scoped sibling is flagged',
+    scan(C, ctrl("@Param('id') id: number, @Body() dto: UpdateDto")).includes('route-scope-inconsistent'), true);
+  check('routes: a scoped write is not',
+    scan(C, ctrl("@Param('id') id: number,\n\t\t@SchoolId() schoolId: number,\n\t\t@Body() dto: UpdateDto,\n\t")).includes('route-scope-inconsistent'), false);
+  check('routes: an unscoped write with no scoped sibling is left alone (a global catalogue)',
+    scan(C, ctrl("@Param('id') id: number").replace('@SchoolId() schoolId: number', 'x: number')).includes('route-scope-inconsistent'), false);
+  const scopedSibling = "\t@Get('bands')\n\t@RequirePermission('r')\n\tasync bands(@SchoolId() s: number) {}\n";
+  check('routes: a machine route with no school beside a scoped sibling is flagged',
+    scan(C, `export class R {\n${scopedSibling}\n\t@Get()\n\t@ApiTokenAuth()\n\t@RequirePermission('r')\n\tasync list(@Query() q: Q) {}\n}`).includes('machine-route-without-scope'), true);
+  check('routes: a controller of global catalogues (no route takes a scope) is left alone',
+    scan(C, "export class R {\n\t@Get('periods')\n\t@ApiTokenAuth()\n\t@RequirePermission('r')\n\tasync periods() {}\n}").length, 0);
+  check('routes: a machine route taking the school is not',
+    scan(C, "export class R {\n\t@Get()\n\t@ApiTokenAuth()\n\t@RequirePermission('r')\n\tasync list(@SchoolId() s: number) {}\n}").includes('machine-route-without-scope'), false);
+
+  // DTO bounds
+  const D = 'backend/src/modules/a/b/model/b.dtos.ts';
+  const dto = (body) => `export class CreateBDto {\n${body}\n}`;
+  check('dto: @IsInt without @Max is flagged', scan(D, dto('\t@IsInt()\n\t@Min(1)\n\tcourseId: number;')).includes('dto-int-unbounded'), true);
+  check('dto: @IsInt with @Max is fine', scan(D, dto('\t@IsInt()\n\t@Min(1)\n\t@Max(2147483647)\n\tcourseId: number;')).includes('dto-int-unbounded'), false);
+  check('dto: an array without @ArrayMaxSize is flagged',
+    scan(D, dto('\t@IsArray()\n\t@ArrayNotEmpty()\n\t@IsInt({ each: true })\n\t@Max(2147483647, { each: true })\n\tids: number[];')).includes('dto-array-unbounded'), true);
+  check('dto: a decorator spanning lines is read whole',
+    scan(D, dto('\t@IsArray()\n\t@ArrayMaxSize(\n\t\t500,\n\t)\n\tcodes: string[];')).includes('dto-array-unbounded'), false);
+  const many = findDtoIssues({ text: dto(Array.from({ length: 8 }, (_, i) => `\t@IsInt()\n\tid${i}: number;`).join('\n')), addedNums: new Set(Array.from({ length: 30 }, (_, i) => i + 1)) });
+  check('dto: many unbounded fields in one file are one hit naming them',
+    `${many.length}/${/CreateBDto.id0, CreateBDto.id1/.test(many[0].text)}/${/8 in all/.test(many[0].text)}`, '1/true/true');
+  check('dto: an untouched property is not reported',
+    findDtoIssues({ text: dto('\t@IsInt()\n\tcourseId: number;'), addedNums: new Set([99]) }).length, 0);
+
+  // reuse by name
+  const files = [
+    { file: 'backend/src/libs/collections.functions.ts', text: 'export function groupBy<K, T>(xs: T[], key: (t: T) => K) {}\n' },
+    { file: 'backend/src/libs/zip.functions.ts', text: "const mod = await import('archiver');\n" },
+    { file: 'backend/src/modules/core/types/constants/type-codes.ts', text: "export const TYPE_CODES = { GRADE: 'TG404-T001' };\n" },
+    { file: 'backend/src/libs/chart-ancestry.functions.ts', text: 'export const chartAncestryCte = () => `WITH RECURSIVE up AS (SELECT * FROM organization.charts)`;\n' },
+    { file: 'backend/src/commons/transaction.functions.ts', text: "await m.query(`SELECT set_config('lock_timeout', $1, true)`);\n" },
+    { file: 'backend/test/db/fixtures.ts', text: 'export async function insertSchool(ds) {}\n' },
+    { file: 'backend/src/modules/x/x.repository.db-spec.ts', text: 'async function seedRubric(ds) {}\n' },
+    { file: 'frontend/src/utils/select.ts', text: 'export type SelectOption<T> = { value: T };\n' },
+  ];
+  const index = buildIndex(files);
+  const reuse = (file, text) => findHelperReuse({ added: new Map([[file, text.split('\n').map((t, i) => ({ n: i + 1, text: t }))]]), index }).map((h) => h.rule);
+  const SV = 'backend/src/modules/a/b/api/b.service.ts';
+  check('helpers: re-declaring an exported function is flagged', reuse(SV, 'function groupBy<K, T>(xs: T[]) {}').includes('redeclared-export'), true);
+  check('helpers: an indented (non top-level) name is not', reuse(SV, '\tconst groupBy = 1;').includes('redeclared-export'), false);
+  check('helpers: a name exported only in the other package is not',
+    reuse('backend/src/x.ts', 'type SelectOption<T> = { v: T };').includes('redeclared-export'), false);
+  check('helpers: the same name in the same package is', reuse('frontend/src/m/Dialog.tsx', 'type SelectOption<T> = { v: T };').includes('redeclared-export'), true);
+  check('helpers: conventional names are skipped', reuse('frontend/src/app/page.tsx', 'export const metadata = {};').length, 0);
+  check('helpers: a second import() of a package is flagged', reuse(SV, "const a = await import('archiver');").includes('duplicate-dynamic-import'), true);
+  check('helpers: a type-code literal is flagged when TYPE_CODES exists', reuse(SV, "const q = `WHERE code = 'TG404-T001'`;").includes('type-code-literal'), true);
+  check('helpers: a type code in a migration is not flagged',
+    reuse('backend/src/database/migrations/1700-x.ts', "await q.query(`WHERE code = 'TG404-T001'`);").includes('type-code-literal'), false);
+  check('helpers: a type code as a DTO example is not flagged',
+    reuse('backend/src/m/a/model/a.dtos.ts', "@ApiProperty({ example: 'TG404-T001' })").includes('type-code-literal'), false);
+  check('helpers: a db-spec\'s own seed() is not a fixture copy',
+    reuse('backend/src/m/b/b.repository.db-spec.ts', 'async function seed() {}').length, 0);
+  check('helpers: no TYPE_CODES in the repo, no rule',
+    findHelperReuse({ added: new Map([[SV, [{ n: 1, text: "'TG404-T001'" }]]]), index: buildIndex([]) }).length, 0);
+  check('helpers: a recursive chart climb outside the helper is flagged',
+    reuse('backend/src/m/a/core/a.sql.ts', 'export const Q = `\nWITH RECURSIVE chain_up AS (\n\tSELECT id FROM organization.charts').includes('recursive-cte-outside-helper'), true);
+  check('helpers: a recursive CTE over something else is not',
+    reuse('backend/src/m/a/core/a.sql.ts', 'WITH RECURSIVE t AS (SELECT 1 FROM organization.org_scopes)').includes('recursive-cte-outside-helper'), false);
+  check('helpers: a hand-set lock_timeout is flagged', reuse(R, "await m.query(`SELECT set_config('lock_timeout', '5s', true)`);").includes('lock-timeout-wrapper'), true);
+  check('helpers: a db-spec re-declaring a fixtures builder is flagged',
+    reuse('backend/src/m/a/a.repository.db-spec.ts', 'async function insertSchool(ds) {}').includes('dbspec-local-fixture'), true);
+  check('helpers: a db-spec copying another db-spec helper is flagged',
+    reuse('backend/src/m/a/a.repository.db-spec.ts', 'async function seedRubric(ds) {}').includes('dbspec-local-fixture'), true);
+  check('helpers: a raw organization insert in a db-spec is flagged',
+    reuse('backend/src/m/a/a.repository.db-spec.ts', "await ds.query(`INSERT INTO organization.schools (name) VALUES ('x')`);").includes('dbspec-local-fixture'), true);
+  check('helpers: a db-spec helper with a new name is fine',
+    reuse('backend/src/m/a/a.repository.db-spec.ts', 'async function insertRubricLevel(ds) {}').length, 0);
+
+  // rule of three: list-shaped windows and db-spec scaffolding are not logic
+  const aliasList = (p) => `export const Q = \`\n\tSELECT\n${Array.from({ length: 14 }, (_, i) => `\t\t${p}.c${p}${i} AS "a${p}${i}",`).join('\n')}\n\tFROM t\n\`;`;
+  check('reuse: a masked column list is not a renamed copy', clones(aliasList('x'), [aliasList('y'), aliasList('z')]).length, 0);
+  const lets = Array.from({ length: 12 }, (_, i) => `let id${i}: number;`).join('\n');
+  check('reuse: db-spec let-declarations are scaffolding', clones(lets, [lets, lets]).length, 0);
+}
 
 // ------------------------------------------------------------- audit ledger
 console.log('audit ledger');
@@ -1123,6 +1258,42 @@ check('ledger: a non-object is rejected', errs('x').length, 1);
   check('ledger cli: report --json is machine-readable', json.bySource.judgment, 3);
   writeFileSync(file, readFileSync(file, 'utf8') + 'not json\n');
   check('ledger cli: a corrupt line is skipped, not fatal', JSON.parse(ledger(['report', '--json']).stdout).malformed, 1);
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// ------------------------------------------- openspec layout: in flight vs archived
+console.log('openspec layout (changes/archive is never in flight)');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'abet-layout-'));
+  const mk = (p, files = []) => {
+    mkdirSync(join(dir, 'openspec', p), { recursive: true });
+    for (const f of files) writeFileSync(join(dir, 'openspec', p, f), 'x\n');
+  };
+  const rel = (p) => relative(join(dir, 'openspec'), p).replace(/\\/g, '/');
+  mk('changes/live-one', ['proposal.md', 'audit.jsonl']);
+  mk('changes/archive/old-one', ['proposal.md', 'audit.jsonl']);
+  mk('specs/legacy-one', ['proposal.md', 'audit.jsonl']);
+  mk('specs/surveys-lcfc', ['spec.md']);
+
+  check('layout: archive/ is not an in-flight change', inFlightChanges(dir).join(','), 'live-one');
+  check('layout: isInFlight refuses the archive folder', isInFlight('archive', dir), false);
+  check('layout: isInFlight accepts a live change', isInFlight('live-one', dir), true);
+  check('layout: archived changes are changes/archive/* then legacy specs/<slug>/',
+    archivedChanges(dir).map(rel).join(','),
+    'changes/archive/old-one,specs/legacy-one');
+  check('layout: a capability spec folder is not an archived change',
+    archivedChanges(dir).some((p) => p.endsWith('surveys-lcfc')), false);
+  check('lean-gate: one live change beside archive/ is still the only candidate',
+    findSlug(undefined, 'feat/unrelated', dir), 'live-one');
+  check('lean-gate: a branch named after archive never resolves to it',
+    findSlug(undefined, 'chore/archive', dir), 'live-one');
+  check('ledger: report reads live, archived and legacy ledgers',
+    ledgerFiles(dir).map(rel).sort().join(','),
+    'changes/archive/old-one/audit.jsonl,changes/live-one/audit.jsonl,specs/legacy-one/audit.jsonl');
+  check('ledger: a branch slug of archive goes to the bug-lane ledger, not into archive/',
+    rel(ledgerPath('fix/archive', dir)), 'audit-ledger/archive.jsonl');
+  mk('changes/second-live');
+  check('lean-gate: two live changes and no branch match means ask', findSlug(undefined, 'feat/unrelated', dir), null);
   rmSync(dir, { recursive: true, force: true });
 }
 

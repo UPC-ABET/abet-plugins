@@ -9,10 +9,11 @@
  * lib/lean-gate.mjs for the bounds and why they are what they are.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isMain } from './lib/is-main.mjs';
 import { checkLean } from './lib/lean-gate.mjs';
+import { inFlightChanges, isInFlight } from './lib/changes.mjs';
 
 const git = (args) => {
   try {
@@ -22,13 +23,15 @@ const git = (args) => {
   }
 };
 
-/** Slug inference from the branch, then the only change folder (conventions.md). */
-function findSlug(explicit) {
+/**
+ * Slug inference from the branch, then the only in-flight change folder (conventions.md).
+ * `changes/archive/` is never a candidate.
+ */
+export function findSlug(explicit, branch = git(['rev-parse', '--abbrev-ref', 'HEAD']), root = '.') {
   if (explicit) return explicit;
-  const branch = git(['rev-parse', '--abbrev-ref', 'HEAD']);
   const slug = (branch.includes('/') ? branch.slice(branch.indexOf('/') + 1) : branch).replace(/^archive-/, '');
-  if (existsSync(join('openspec', 'changes', slug))) return slug;
-  const dirs = existsSync(join('openspec', 'changes')) ? readdirSync(join('openspec', 'changes')) : [];
+  if (isInFlight(slug, root)) return slug;
+  const dirs = inFlightChanges(root);
   return dirs.length === 1 ? dirs[0] : null;
 }
 

@@ -16,7 +16,11 @@ autonomous: the fully-rendered PR is shown first and created only after you say 
    run it first. Opening a PR that the author has not audited wastes the reviewer.
 3. **Tasks complete** (when a change folder exists):
    `grep -c '^- \[ \]' openspec/changes/<slug>/tasks*.md` must be zero, and there must be
-   at least one `- [x]`. Open tasks mean the change is not done.
+   at least one `- [x]`. Open tasks mean the change is not done. The change is the
+   in-flight folder `openspec/changes/<slug>/` only — resolve `<slug>` by the inference
+   rules in `reference/conventions.md`, which never pick `openspec/changes/archive/`, and
+   never glob `openspec/changes/*/tasks*.md`, which would count archived changes as open
+   work.
 4. **Everything is committed.** `git status --porcelain` must be empty. If it is not,
    propose the commits and stop — this skill does not commit for you.
 5. **Branch is pushed.** `git push -u origin <branch>`. If the branch has been rebased,

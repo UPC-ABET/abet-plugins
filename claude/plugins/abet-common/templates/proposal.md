@@ -3,6 +3,7 @@
 **Slug**: `<slug>`
 **Branch**: `feat/<slug>`
 **Packages affected**: backend | frontend | both
+**Specs affected**: <capability>, <capability> | none
 **Created**: YYYY-MM-DD
 
 ## Problem
@@ -15,6 +16,10 @@ operation's point of view, not as "we need feature X".
 The modules, endpoints, entities, screens and jobs already in play. Most changes here
 are additive to something that exists — say what, with paths. This section is what stops
 the design proposing to build something that is already half built.
+
+Start from `openspec/specs/<capability>/spec.md` for each capability under **Specs
+affected**: the behaviour and rules it lists are current truth, and any this change alters
+are named here.
 
 ## Goals
 

@@ -19,7 +19,8 @@ gh pr diff <number>
 gh pr checks <number>
 ```
 
-Then establish context the diff alone cannot give you:
+Then establish context the diff alone cannot give you (the `openspec/` layout is in
+`plugins/abet-common/reference/conventions.md`):
 
 1. **Base branch** should be `develop`. A PR targeting `staging` or `production` directly
    is a **blocker** — those only ever receive fast-forward promotions.
@@ -44,13 +45,21 @@ Then establish context the diff alone cannot give you:
    **Run the scanners.** With the PR's head checked out (`gh pr checkout <number>`), run
    `node node_modules/abet-plugins/shared/scripts/audit-scope.mjs --base <baseRefName>`.
    It prints, among other things, `security` (pattern hits against the team's auth, scope
-   and SQL rules), `reuse` (code the PR copies, counted across the repo), `deadCode` and
+   and SQL rules), `reuse` (code the PR copies, counted across the repo, and helpers it
+   re-declares by name), `deadCode` and
    `docsHits`. They cost nothing and do not depend on you noticing. If the head is not
    checked out, or the script is missing, errors or prints nothing (a failure, not an empty
    result — say so in one line), apply the same checks by hand with `git grep`.
 4. **Read the change folder** if one exists: `proposal.md` for the acceptance criteria,
    `design.md` for the intended approach. Review against what was agreed, not against how
    you would have built it.
+5. **Read the current truth for what the PR touches**: `openspec/specs/<capability>/spec.md`
+   for each capability on the proposal's **Specs affected** line (no proposal: the
+   capabilities whose code the diff touches). A rule, invariant or known edge case there
+   that the diff breaks is a correctness finding, unless the proposal says the change
+   alters it on purpose. Open an archived change (`openspec/changes/archive/<slug>/`, or
+   legacy `openspec/specs/<slug>/`) only for the history behind a specific decision —
+   never treat it as how the code behaves now.
 
 ## Phase 1 — the openspec state check
 
@@ -61,10 +70,12 @@ This is state-aware, and the states mean different things:
 | Change active in `openspec/changes/<slug>/`, all tasks checked | ✅ correct |
 | Change active, **open `- [ ]` tasks remain** | **blocker** — the work is not finished |
 | Task file has no checkboxes at all | **blocker** — the completeness gate cannot see anything, so its silence means nothing |
-| Change already in `openspec/specs/` before merge | **major** — archived too early; the spec says done while the code is unmerged |
+| Change already in `openspec/changes/archive/<slug>/` (or legacy `openspec/specs/<slug>/`) before merge | **major** — archived too early; the record says done while the code is unmerged |
 | No change folder inferable | fine — that is the `/abet-fix` bug lane |
 
-Infer the slug from the PR's head branch. Do not treat a missing change folder as a
+Infer the slug from the PR's head branch. `openspec/changes/archive/` is never the
+change: if the only folder you can find for the slug is under `archive/`, that is the
+"archived too early" row, not an in-flight change. Do not treat a missing change folder as a
 finding on its own; a one-shot defect legitimately skips it. Do treat a *multi-step* change
 with no folder — one with a migration, a contract change, or work across several layers —
 as a **major**.
@@ -107,7 +118,12 @@ a function that accepts a scope id and never uses it (`scope-param-unused`); SQL
 values; a secret; and `@ApiTokenAuth()` with `@SkipPermissions()` are **blockers**;
 `@Public()` / `@SkipPermissions()` need the proposal to justify them. A route with no
 `@RequirePermission` is a **defect, not an open door**: the guard throws
-`error.auth.noPermissionsConfigured`, so it always fails.
+`error.auth.noPermissionsConfigured`, so it always fails. A `nullable-scope-predicate`, or a
+`route-scope-inconsistent` / `machine-route-without-scope` hit on a route that reaches
+per-school or personal data, is a **blocker**; DTO bounds (`dto-int-unbounded`,
+`dto-array-unbounded`) and raw text in logs or error responses (`log-unescaped-input`,
+`error-message-in-response`) are **minor**, or **major** when the request controls the loop
+size or the text. The severity table in `/abet-audit-pr` is the same.
 
 *Pass 2 — read as an attacker, ignoring the script.* For every new or changed entry point
 (a route, job, event handler, upload, export), ask:
@@ -171,8 +187,12 @@ third is the trigger to extract it into a shared function, service, repository m
 component. Take the count from the scanner's `reuse` (Phase 0), not from memory: an
 `extract` entry is a **major** finding naming the copies and the right home; a `tolerated`
 entry is one line noting that the next copy must extract; `templatesSkipped` are
-convention, not findings. The scanner only sees textually similar code, so also
-`git grep` for an existing helper before accepting a new one as original.
+convention, not findings. `reuse.helpers` lists short copies found by name (a re-declared
+helper, type or constant, a second `import()` wrapper, a db-spec builder that
+`test/db/fixtures` already has, a type-code literal, another chart climb or `lock_timeout`
+wrapper): each names the existing one, and a confirmed hit is a **minor** finding with the
+fix "use it". The scanner only sees what it has a rule for, so also `git grep` for an
+existing helper before accepting a new one as original.
 
 **Dead code is a finding, never a suggestion.** An unused file, function, export,
 parameter, import or commented-out block the PR adds is a **major** finding with the fix
@@ -239,7 +259,7 @@ make the one call. Fields:
 | ----- | --- | ----- |
 | `area` | all | `security` or `reuse` |
 | `source` | all | `mechanical` — a script hit (`security`, `reuse`); `judgment` — you found it |
-| `rule` | mechanical | the script's rule id from `security.hits[].rule`, e.g. `cache-key-without-scope`; for a `reuse.extract` entry always `rule-of-three` |
+| `rule` | mechanical | the script's rule id from `security.hits[].rule` or `reuse.helpers[].rule`, e.g. `cache-key-without-scope`, `redeclared-export`; for a `reuse.extract` entry always `rule-of-three` |
 | `category` | all | `scope-leak` `authz` `authn` `idor` `injection` `secrets` `crypto` `data-exposure` `file-handling` `dos` `ssrf` `deserialization` `logging` `config` `dependency` `race` `export-injection` `duplication` `existing-helper` `other` |
 | `severity` | confirmed | `blocker` `major` `minor` `suggestion` |
 | `verdict` | all | `confirmed`, or `false-positive` for a mechanical hit you dropped |

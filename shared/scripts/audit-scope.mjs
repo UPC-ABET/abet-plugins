@@ -19,6 +19,8 @@ import { isMain } from './lib/is-main.mjs';
 import { addedLines } from './lib/diff.mjs';
 import { scanSecurity } from './lib/security.mjs';
 import { findClones, isCloneCandidate } from './lib/clones.mjs';
+import { isInFlight } from './lib/changes.mjs';
+import { buildIndex, findHelperReuse } from './lib/helpers.mjs';
 import { scanDiff } from '../hooks/lib/secrets.mjs';
 
 const args = process.argv.slice(2);
@@ -239,9 +241,8 @@ function main() {
 
   const branch = git(['rev-parse', '--abbrev-ref', 'HEAD']) ?? '';
   const slug = branch.includes('/') ? branch.slice(branch.indexOf('/') + 1) : null;
-  const changeDir = slug ? join('openspec', 'changes', slug) : null;
-  const change = changeDir && existsSync(changeDir)
-    ? { slug, path: `openspec/changes/${slug}`, ...countTasks(changeDir) }
+  const change = isInFlight(slug)
+    ? { slug, path: `openspec/changes/${slug}`, ...countTasks(join('openspec', 'changes', slug)) }
     : { slug, path: null };
 
   // Docs the diff may have made false: CONTEXT.md is up to ~100KB, so look up instead of read.
@@ -279,16 +280,20 @@ function main() {
   };
   const targets = [...numbered].filter(([f]) => isCloneCandidate(f) && existsSync(f))
     .map(([file, ls]) => ({ file, text: readFileSync(file, 'utf8'), addedNums: new Set(ls.map((l) => l.n)) }));
-  const corpus = targets.length === 0 ? [] : (git(['ls-files', '--', '*.ts', '*.tsx', '*.js', '*.mjs']) ?? '').split('\n')
-    .filter((f) => f && isCloneCandidate(f) && existsSync(f))
+  // Every source file, read once: the clone corpus and the index of what already exists.
+  const sources = numbered.size === 0 ? [] : (git(['ls-files', '--', '*.ts', '*.tsx', '*.js', '*.mjs']) ?? '').split('\n')
+    .filter((f) => f && !/(^|\/)(node_modules|dist|build|coverage|out|\.next)\/|\.d\.ts$/.test(f) && existsSync(f))
     .map((file) => ({ file, text: readFileSync(file, 'utf8') }))
     .filter((c) => c.text.length < 300_000);
+  const corpus = targets.length === 0 ? [] : sources.filter((c) => isCloneCandidate(c.file));
   const clones = findClones({ targets, corpus });
   const reuse = {
     // a third copy is the trigger to extract; a second is tolerated but the next one must not be
     extract: clones.filter((c) => c.verdict === 'extract').slice(0, 10),
     tolerated: clones.filter((c) => c.verdict === 'tolerated').slice(0, 5),
     templatesSkipped: clones.filter((c) => c.verdict === 'template').length,
+    // short copies a block comparison cannot see: a name, an import, a literal the repo already has
+    helpers: findHelperReuse({ added: numbered, index: buildIndex(sources) }).slice(0, 20),
   };
 
   // A route/DTO change with an untouched spec is the frontend's silent breakage.

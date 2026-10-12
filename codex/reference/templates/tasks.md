@@ -12,6 +12,8 @@
   heading. Never one without the other — the completeness gate reads the boxes.
 - **No autonomous commits.** Propose the grouping and stop.
 - Do not edit `docs/POLICIES.md` or `docs/adr/*`.
+- This file is a plan, not a work log: tasks, checkboxes and short retros only. No
+  debugging narratives, query output or logs. Past ~50 KB, flag it.
 
 ## Goal
 

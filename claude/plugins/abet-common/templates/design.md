@@ -10,7 +10,8 @@ Where the next reader should start, and where this design started.
 - `docs/CONTEXT.md` § <section>
 - `docs/POLICIES.md` § <section>
 - `docs/adr/ADR-0NN-<slug>.md` — <why it matters here>
-- `openspec/specs/<prior-slug>/design.md` — prior art for <what>
+- `openspec/specs/<capability>/spec.md` — current behaviour and rules this change must keep
+- `openspec/changes/archive/<prior-slug>/design.md` — only for the why behind <decision>
 - `src/modules/<module>/` — the code being modified
 
 ## ADR gate (walked, not skipped)
@@ -51,9 +52,24 @@ explains how AC-3 is met.
 - **Module**: `backend/src/modules/<area>/<module>/`
 - **Entities / migrations**: what changes, and whether a migration is generated or hand-written
 - **Endpoints**: method, route, DTOs, response shape
-- **Guards / scope**: which guard, which scope headers apply
 - **i18n keys**: the keys added and where they are defined
-- **Validation**: business-rule validation vs DTO validation
+- **Validation**: business-rule validation vs DTO validation, and the bound on every
+  integer (`@Max`) and array (`@ArrayMaxSize`) the request carries
+
+### Endpoints and scope
+
+One row per route added or changed, **and every sibling route on the same entity** — the
+unscoped write beside a scoped read is the gap audits keep finding.
+
+| Route | Principals (JWT, machine) | Permission | Scope taken from | How a by-id route proves the row is the caller's | Not-yours response |
+| ----- | ------------------------- | ---------- | ---------------- | ------------------------------------------------ | ------------------ |
+|       |                           |            | `@SchoolId()` / global — why |                                  | same as not-found  |
+
+### Concurrency
+
+Delete when no write here takes a lock. For each locking write: what it serialises against,
+the order its locks are taken in, and its `lock_timeout` — through the shared transaction
+wrapper, not a new one.
 
 ## Frontend
 
@@ -84,11 +100,25 @@ Delete this section for a change touching only one package.
 
 Anything marked manual must appear in `runbook.md`.
 
+## Reuse
+
+What this change builds on instead of re-deriving: shared helpers, SQL fragments, constants,
+types and test fixtures, each with its path. A new CTE, constant or helper that encodes a
+business rule something else already encodes is a design decision — say here why it cannot
+reuse the existing one.
+
+| Need | Existing | Path |
+| ---- | -------- | ---- |
+|      |          |      |
+
 ## Risks
 
 | Risk | Mitigation |
 | ---- | ---------- |
 |      |            |
+
+Include the per-request bound (rows, files, array size) for anything that loops, locks or
+exports, and whether exports stream or buffer.
 
 ## Docs to update in this PR
 

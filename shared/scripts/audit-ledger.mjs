@@ -10,7 +10,7 @@
  * `add` validates every record before writing any, and says exactly what is wrong, so a model
  * that gets a field wrong fixes it instead of leaving a corrupt file. It is the only thing the
  * read-only audit is allowed to write. Records live with the change they came from
- * (`openspec/changes/<slug>/audit.jsonl`, archived along with it) or, on the bug lane with no
+ * (`openspec/changes/<slug>/audit.jsonl`, moved to `changes/archive/<slug>/` with it) or, on the bug lane with no
  * change folder, in `openspec/audit-ledger/<slug>.jsonl`. `report` reads them all.
  *
  * See lib/ledger.mjs for the schema and for why judgment findings carry a `detect` note.
@@ -20,6 +20,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from
 import { join } from 'node:path';
 import { isMain } from './lib/is-main.mjs';
 import { aggregate, renderReport, validateRecord } from './lib/ledger.mjs';
+import { archivedChanges, inFlightChanges, isInFlight } from './lib/changes.mjs';
 
 const git = (args) => {
   try {
@@ -36,22 +37,21 @@ const git = (args) => {
 export function ledgerPath(branch, root = '.', { lane = 'audit', pr } = {}) {
   if (lane === 'review') return join(root, 'openspec', 'audit-ledger', `review-${pr}.jsonl`);
   const slug = (branch.includes('/') ? branch.slice(branch.indexOf('/') + 1) : branch).replace(/[^\w.-]+/g, '-') || 'unknown';
-  const change = join(root, 'openspec', 'changes', slug);
-  return existsSync(change) ? join(change, 'audit.jsonl') : join(root, 'openspec', 'audit-ledger', `${slug}.jsonl`);
+  return isInFlight(slug, root)
+    ? join(root, 'openspec', 'changes', slug, 'audit.jsonl')
+    : join(root, 'openspec', 'audit-ledger', `${slug}.jsonl`);
 }
 
-/** Every ledger file under openspec/: live changes, archived specs, and the bug-lane ledger. */
+/**
+ * Every ledger file under openspec/: in-flight changes, archived changes (`changes/archive/`
+ * and the legacy `specs/<slug>/`), and the bug-lane ledger.
+ */
 export function ledgerFiles(root = '.') {
-  const out = [];
   const openspec = join(root, 'openspec');
-  for (const dir of ['changes', 'specs']) {
-    const base = join(openspec, dir);
-    if (!existsSync(base)) continue;
-    for (const d of readdirSync(base, { withFileTypes: true })) {
-      const f = join(base, d.name, 'audit.jsonl');
-      if (d.isDirectory() && existsSync(f)) out.push(f);
-    }
-  }
+  const out = [
+    ...inFlightChanges(root).map((slug) => join(openspec, 'changes', slug)),
+    ...archivedChanges(root),
+  ].map((dir) => join(dir, 'audit.jsonl')).filter((f) => existsSync(f));
   const lane = join(openspec, 'audit-ledger');
   if (existsSync(lane)) for (const f of readdirSync(lane)) if (f.endsWith('.jsonl')) out.push(join(lane, f));
   return out;

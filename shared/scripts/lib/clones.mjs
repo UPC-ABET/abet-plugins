@@ -22,6 +22,12 @@ export const W_EXACT = 8;
 export const W_RENAMED = 10;
 const MIN_CHARS_EXACT = 160;
 const MIN_CHARS_RENAMED = 220;
+/**
+ * A renamed window must hold at least this many different line shapes. Once names and strings
+ * are masked, a SQL column list (`c.name AS "name"`) or a run of JSX attributes collapses to
+ * the same line repeated, which matches any other list of the same length.
+ */
+const MIN_DISTINCT_RENAMED = 4;
 
 /** Not compared, either as the new code or as the thing it might copy. */
 export const NOT_COMPARED = new RegExp([
@@ -48,6 +54,12 @@ const maskLine = (norm) => norm
 const NOISE = /^[\]})\{;,\s]*$/;
 /** `name?: Type;` — ends in `;` where an object-literal property (`code: x.code,`) ends in `,`. */
 const MEMBER_DECLARATION = /^(readonly\s+)?[\w$]+\??:\s*[^=(){}]+;$/;
+/**
+ * Test scaffolding every db-spec repeats by design: `let schoolId: number;` declarations and
+ * opening or closing the spec's data source. They made up a third of the rule's false
+ * positives in the audit ledger.
+ */
+const SCAFFOLD = /^let\s+[\w$]+\s*:\s*[^=]+;$|\b(open|close)DbSpec\w*\(/;
 
 /**
  * A block found in more places than this is a convention the team standardised (every
@@ -89,6 +101,7 @@ export function significantLines(text) {
     }
     if (NOISE.test(line) || /^import\b/.test(line) || /^export\s+(\*|\{)[^;]*\bfrom\b/.test(line) || line.startsWith('@')) return;
     if (MEMBER_DECLARATION.test(line)) return; // `firstName: string;` — an interface member, not logic
+    if (SCAFFOLD.test(line)) return;
     const norm = line.replace(/\s+/g, ' ').replace(/[;,]$/, '');
     out.push({ n: idx + 1, norm, mask: maskLine(norm) });
   });
@@ -101,6 +114,7 @@ const sizeOf = (lines, i, w) => lines.slice(i, i + w).reduce((n, l) => n + l.nor
 function* windows(lines, w, field, minChars) {
   for (let i = 0; i + w <= lines.length; i++) {
     if (sizeOf(lines, i, w) < minChars) continue;
+    if (field === 'mask' && new Set(lines.slice(i, i + w).map((l) => l.mask)).size < MIN_DISTINCT_RENAMED) continue;
     yield { i, key: lines.slice(i, i + w).map((l) => l[field]).join('\n') };
   }
 }

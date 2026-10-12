@@ -50,7 +50,8 @@ task file with no checkboxes, routes or DTOs changed with `openapi.json` untouch
 `deadCode` — new files and exports nothing else references — `docsHits` — lines of
 `CONTEXT.md` that name something this diff newly uses, each a candidate stale statement —
 `security` — pattern hits against the team's own auth, scope and SQL rules, plus secrets and
-new dependencies — `reuse` — code this diff copies, counted across the whole repo — and the
+new dependencies — `reuse` — code this diff copies, counted across the whole repo, and
+(`reuse.helpers`) helpers, types and constants it re-declares by name — and the
 chosen `depth` with its `reasons`. Take its answers as given — do not re-derive them.
 If it prints `empty` there is nothing to audit; stop. If the file is missing, it errors, or
 it prints **nothing at all**, that is a failure, not an empty result: tell the user in one
@@ -64,7 +65,8 @@ command needs allowing), then do steps 1–5 by hand as written below.
    If it is empty, stop — there is nothing to audit.
 3. **Resolve the change**: infer `<slug>` from the branch. Note whether
    `openspec/changes/<slug>/` exists. Absent is fine and means the bug lane
-   (`/abet-fix`); it is not a finding on its own.
+   (`/abet-fix`); it is not a finding on its own. `openspec/changes/archive/` is never the
+   change — an archived folder is not in flight.
 4. **Task completeness** (only when a change folder exists):
    `grep -c '^- \[ \]' openspec/changes/<slug>/tasks*.md`
    Open tasks remaining is a **blocker** — the change is not finished.
@@ -88,6 +90,14 @@ command needs allowing), then do steps 1–5 by hand as written below.
      diff newly uses. For each, decide whether the diff has made that line false, and if so
      it is a finding (**the diff wins**). If there is no script, grep `CONTEXT.md` for those
      same terms instead.
+
+   Then the **current truth for the capabilities touched**: `openspec/specs/<capability>/spec.md`
+   for each capability on `proposal.md`'s **Specs affected** line (bug lane: the
+   capabilities whose code the diff touches). Its rules, invariants and known edge cases
+   go into PROJECT_RULES; breaking one is a finding unless the proposal changes it on
+   purpose. Archived changes (`openspec/changes/archive/<slug>/`, or legacy
+   `openspec/specs/<slug>/`) are history — open one only for the why behind a specific
+   decision, never as a statement of current behaviour.
 
    Say in the rules walk which files you read in full and which you looked up.
 7. **Detect the stack** from the changed paths so auditors skip what does not apply.
@@ -145,7 +155,11 @@ Then **documentation currency**, which is this auditor's most valuable job:
 
 - Does the diff change a domain term, business rule, integration or architectural fact
   that `docs/CONTEXT.md` states differently? **The diff wins** — flag the stale line.
-- Does `docs/CONTEXT.md` mention an in-flight change that has already been archived?
+- Does `docs/CONTEXT.md` mention an in-flight change that has already been archived (moved
+  to `openspec/changes/archive/`)?
+- Does the diff contradict a rule or edge case in an affected capability's
+  `openspec/specs/<capability>/spec.md` without the proposal saying so? Either the code is
+  wrong, or the proposal is missing the change and `/abet-archive` will need to know.
 - Does the change folder's `proposal.md` still describe what was actually built? If the
   diff and the proposal disagree, the diff wins and the proposal needs a dated scope
   extension.
@@ -194,6 +208,19 @@ script's `reuse` counted it across the whole repo:
   next copy must extract instead.
 - `reuse.templatesSkipped` are blocks repeated across so many modules that they are a
   convention (the validation skeleton, base-class scaffolding), not a reuse miss.
+- `reuse.helpers`: short copies a block comparison cannot see, found by name. Each names the
+  existing helper in `locations`. Confirm it is the same intent, then report it as a
+  **minor** finding (**major** when it re-derives a business rule, such as a type code or a
+  chart climb) with the fix "use the existing one":
+
+  | Rule | What the diff did |
+  | ---- | ----------------- |
+  | `redeclared-export` | declared a top-level function, constant or type the package already exports |
+  | `duplicate-dynamic-import` | a second `import('<pkg>')` wrapper beside an existing one |
+  | `dbspec-local-fixture` | a db-spec seeding through its own builder (or a raw organization `INSERT`) instead of `test/db/fixtures` |
+  | `type-code-literal` | a `'TGnnn-Tnnn'` literal where `TYPE_CODES` exists |
+  | `recursive-cte-outside-helper` | another recursive climb of `organization.charts` beside the ancestry helper |
+  | `lock-timeout-wrapper` | `lock_timeout` set by hand, or `runInTransaction` redeclared, beside the shared wrapper |
 
 The script only sees copies that are textually alike. Before writing off a new helper as
 original, `git grep` for an existing function that already does it: reusing what exists is
@@ -230,6 +257,10 @@ hit you confirmed, `[judgment]` for one you found yourself.
 | `api-token-skip-permissions` | **blocker** — POLICIES forbids the pairing outright. |
 | `public-route`, `skip-permissions` | **major** unless the proposal justifies open access; say what data the route can reach. |
 | `route-without-permission` | **major**, and a **defect, not an open door**: with no decorator the guard throws `error.auth.noPermissionsConfigured`, so the endpoint always fails. Never describe it as unauthenticated. |
+| `nullable-scope-predicate` | **blocker** if any caller can pass a null scope (an "all" flag, a missing header); drop it only if every call site passes a non-null scope it took from the header. |
+| `route-scope-inconsistent`, `machine-route-without-scope` | **major** — **blocker** when the route reads or writes per-school or personal data. Drop it only if the entity is genuinely global, and say why. |
+| `dto-int-unbounded`, `dto-array-unbounded` | **minor**; **major** when the value drives a loop, a lock or a bulk write. |
+| `log-unescaped-input`, `error-message-in-response` | **minor**; **major** when the text is request-controlled or the response reaches an external caller. |
 | `process-env`, `dangerous-api`, `weak-crypto`, `insecure-random`, `cors-any-origin`, `shell-interpolation`, `log-sensitive` | **major**, or **minor** with a stated reason (a jitter `Math.random()`, a fixed shell string). |
 | `newDependencies` | Justified, maintained, licensed, and not already covered by a package the repo has. |
 

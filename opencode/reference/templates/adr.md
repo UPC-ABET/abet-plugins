@@ -51,5 +51,5 @@ One decision per ADR. If this section contains "and also", it is two ADRs.
 ## References
 
 - PR #NNN — <what it did>
-- `openspec/specs/<slug>/design.md`
+- `openspec/changes/archive/<slug>/design.md` (or `openspec/changes/<slug>/` while in flight)
 - ADR-0NN — <related decision>

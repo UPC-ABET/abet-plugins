@@ -141,6 +141,27 @@ testing whether that directory exists. There is no OpenSpec CLI — it is a fold
 convention implemented with `mkdir`, `Write` and `git mv`.
 
 ```
+openspec/
+├── specs/<capability>/spec.md   current truth, one per capability, edited in place
+└── changes/
+    ├── <slug>/                  in flight
+    └── archive/<slug>/          merged changes, moved with git mv, never edited again
+```
+
+`specs/` is **current truth**, not the archive: one short, behaviour-focused `spec.md` per
+capability (Purpose / Behaviour / Rules & invariants / Known edge cases / References), each
+rule linking to the archived change or ADR that explains it. `/abet-archive` is the only
+writer: after a merge it harvests the change's lasting behaviour into the affected specs —
+named on `proposal.md`'s `Specs affected:` line — shows the diff, waits for approval, and
+then moves the folder to `changes/archive/` in the same chore PR. Every skill reads the
+capability spec first and an archived change only for the history behind one decision.
+`changes/archive/` is never treated as in flight, by the skills or the scripts.
+
+Repos still on the old layout (archived changes in `openspec/specs/<slug>/`, recognised by
+a `proposal.md` and no `spec.md`) keep working: reads fall back to it, and the first
+`/abet-archive` starts the new layout beside it.
+
+```
 FEATURE
   /abet-define-task    request → proposal.md (the ticket)
       ↓
@@ -155,7 +176,8 @@ FEATURE
   /abet-address-review triage feedback → one new commit on top
       ↓                ←→ /abet-review-pr  (reviewer's side, on someone else's PR)
       ↓
-  /abet-archive        git mv changes/ → specs/ via its own chore PR
+  /abet-archive        harvest into specs/<capability>/spec.md, then
+                       git mv changes/<slug> → changes/archive/<slug>, one chore PR
 
 BUG
   /abet-fix            reproduce → root cause → regression test → minimal fix
@@ -309,7 +331,11 @@ team's own rules on auth and scope (`scope-from-request`, `cache-key-without-sco
 `scope-param-unused`, `route-without-permission`, SQL built from values, secrets, a new
 `@Public()`…), and duplicate code counted across the repo (**rule of three**: two copies are
 tolerated, the third is a major finding that names all the copies). Blocks repeated across
-more than 12 modules are treated as a convention, not duplication.
+more than 12 modules are treated as a convention, not duplication. Copies too short for a
+block comparison are found by name (`reuse.helpers`): a re-declared exported helper or type,
+a second `import()` wrapper, a db-spec builder that `test/db/fixtures` already has, a
+type-code literal beside `TYPE_CODES`, another chart-ancestry climb or `lock_timeout`
+wrapper. Each of those rules stays silent in a repo that lacks the helper it points at.
 
 The scripts are the floor. The security auditor also reads the diff as an attacker, and
 anything it finds that no rule flagged is a **judgment** finding.
@@ -335,6 +361,26 @@ an audit on one branch does not count twice. This has already worked once: audit
 finding an IDOR shaped `getRoster(id, schoolId) { return repo.findRoster(id) }` by reading, and
 it became the rule `scope-param-unused`.
 
+The second round (0.8.0) came from 178 ledger records across 14 changes, and it worked on both
+ends of the pipeline:
+
+- **Into code.** Recurring judgment findings became rules: sibling routes that skip the
+  scope (`route-scope-inconsistent`, `machine-route-without-scope`), a nullable scope array in
+  SQL, unbounded DTO integers and arrays, raw text in logs and error responses, and the
+  name-based reuse rules above. Noisy rules were tightened from their recorded false
+  positives: `sql-interpolation` (7% precision) now ignores `$${n}` placeholders, ALL_CAPS
+  constants, SQL-fragment builders, and migration and seed constants; `process-env` lets the
+  db-spec harness read the environment; `*.db-spec.ts` files are treated as tests; and the
+  rule of three ignores db-spec scaffolding and list-shaped windows. Replayed over the last
+  12 merged ACC-SYS PRs, the new rules produce about 50 candidates, most of them findings
+  the ledger had already recorded by hand.
+- **Upstream, so the audit finds less because the work is better.** What a pattern cannot
+  catch is now asked for earlier: `design.md` has an **Endpoints and scope** table covering
+  sibling routes, a **Reuse** table and a **Concurrency** checklist; the backend stack rules
+  carry DTO bounds, log escaping, the transaction wrapper and db-specs seeding only through
+  `fixtures.ts`; and `/abet-implement` searches by name and literal before declaring
+  anything, and says in the retro what it reused.
+
 ### Hooks are Node, not shell
 
 No Git Bash, no `jq`, no PowerShell variants to keep in sync — the same code runs on macOS
@@ -348,7 +394,7 @@ and Windows, and node is already a dependency of the consuming repo.
 ├── shared/
 │   ├── skills/{common,backend,frontend}/abet-*/SKILL.md
 │   ├── agents/{common,backend,frontend}/*.md
-│   ├── templates/{proposal,design,tasks,runbook,contract,adr}.md
+│   ├── templates/{proposal,design,tasks,runbook,contract,adr,spec}.md
 │   ├── rules/{backend,frontend}.md
 │   ├── reference/conventions.md
 │   └── hooks/

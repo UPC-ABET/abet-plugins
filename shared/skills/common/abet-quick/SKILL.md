@@ -46,7 +46,8 @@ nobody reviewed. If in doubt, go to the full lane.
 ### 0. Set up
 
 Derive the slug (kebab-case, 3–6 words, naming the thing, not the action; it must not exist
-in `openspec/changes/` or `openspec/specs/`). If you are on `develop`, create
+in `openspec/changes/`, `openspec/changes/archive/` or, in a legacy repo,
+`openspec/specs/`, and it is never `archive`). If you are on `develop`, create
 `feat/<slug>` (or `fix/<slug>`); if you are already on a feature branch, stay on it. Never
 work on `staging` or `production`.
 
@@ -58,8 +59,11 @@ work on `staging` or `production`.
   will be audited against, and a section you skipped is a rule you will break. This is the
   one read; do not repeat it.
 - **Not in full:** the backend's `CONTEXT.md` is ~100KB. Read root `docs/CONTEXT.md` and
-  search the package one for the terms the request involves. List `docs/adr/` titles and
-  `openspec/specs/` for prior art.
+  search the package one for the terms the request involves. List `docs/adr/` titles, then
+  list `openspec/specs/` and read `openspec/specs/<capability>/spec.md` **in full** for each
+  capability the request touches — current behaviour and the rules you must keep. Open an
+  archived change (`openspec/changes/archive/<slug>/`, or legacy `openspec/specs/<slug>/`)
+  only for the why behind a specific decision; it is never current behaviour.
 - **The closest sibling.** Read the existing module most like the one you are extending,
   end to end, and build in its shape. Most of the cost of a change is discovering the
   conventions; a sibling shows them.
@@ -85,6 +89,7 @@ and a failing-first test. Read the entities, the unique keys and `docs/adr/` to 
 "No" needs its evidence. The gate below refuses a plan that has no Scope check.
 
 - `openspec/changes/<slug>/proposal.md`, from the template: `**Packages affected**`,
+  `**Specs affected**` (capability names, or `none`),
   Problem, What already exists, Goals, Non-goals, numbered **Acceptance criteria** with the
   traceability table (every AC gets a row, "Satisfied by" `TBD` until step 5), the
   **Scope check**, **Assumptions**,
@@ -93,7 +98,9 @@ and a failing-first test. Read the entities, the unique keys and `docs/adr/` to 
   follows) and **ADR gate (walked, not skipped)**, the table from `/abet-design-feature`
   — Datastore, Auth, Public API contract, New module boundary, Runtime, Existing ADR — each
   answered, even when all are No. A **Yes** stops the lane: run `/abet-adr`, then the full
-  lane.
+  lane. When the change adds or alters a route, add the **Endpoints and scope** table from
+  `templates/design.md` too, with a row for every sibling route on the same entity, and
+  name what you reuse (helpers, SQL fragments, fixtures) in the Approach.
 - `openspec/changes/<slug>/tasks.md`, from `templates/tasks.md`: vertical tasks, each with
   its `- [ ] Task complete` box, a **Files** block (`` `path` (modify|new|test) ``) and TDD
   steps. Every file the change touches is named, because the gate reads them.

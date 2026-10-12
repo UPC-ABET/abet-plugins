@@ -10,17 +10,51 @@ testing whether its directory exists.
 
 ```
 openspec/
-├── changes/            in flight — one directory per change
-│   └── <slug>/
-│       ├── proposal.md     the ticket: problem, ACs, scope
-│       ├── design.md       how it will be built, incl. the ADR gate
-│       ├── tasks.md        the working plan and the record of what happened
-│       └── runbook.md      (when needed) manual validation + operational steps
-└── specs/              archived record — append-only, moved here after merge
+├── specs/                  CURRENT TRUTH — one folder per capability
+│   └── <capability>/
+│       └── spec.md             what it does, its rules and invariants, known edge cases
+└── changes/
+    ├── <slug>/             in flight — one directory per change
+    │   ├── proposal.md         the ticket: problem, ACs, scope, specs affected
+    │   ├── design.md           how it will be built, incl. the ADR gate
+    │   ├── tasks.md            the plan, with a checkbox per task
+    │   └── runbook.md          (when needed) manual validation + operational steps
+    └── archive/            merged changes — moved here with git mv, never edited again
+        └── <slug>/
 ```
 
-`specs/` is a historical record of change folders, not a set of canonical capability
-specs. There is no ADDED/MODIFIED/REMOVED delta merge.
+**`specs/<capability>/spec.md` is the current truth.** One folder per capability
+(`surveys-lcfc`, `reports-rc-rv`, `academic-periods`), named for what the system does, not
+for a change. Each is short and behaviour-focused, edited in place, and follows
+`templates/spec.md`: Purpose / Behaviour / Rules & invariants / Known edge cases /
+References. Every rule and edge case links to the archived change or ADR that explains
+*why*. No task logs, no history narrative — when a change supersedes a statement, the
+statement is rewritten, not appended to. Only `/abet-archive` writes it, after merge.
+
+**`changes/archive/<slug>/` is history.** It explains why a decision was made; it is never
+current behaviour, because a later change may have superseded it. Read it only for the
+reasoning behind a specific decision that a spec or ADR links to.
+
+**`changes/archive/` is not a change.** Anything that lists or counts in-flight changes
+lists the directories under `openspec/changes/` **excluding `archive/`**.
+
+ADRs stay in `docs/adr/` (and the packages' `docs/adr/`). Repo-wide rules stay in
+`docs/POLICIES.md` and `AGENTS.md` — never in a capability spec.
+
+### Where to look for prior context
+
+1. `openspec/specs/<capability>/spec.md` for each capability the change touches — **first**.
+2. The ADRs those specs link to, and any ADR whose title touches the area.
+3. `openspec/changes/archive/<slug>/` — only for the history behind one specific decision.
+
+### Legacy layout (read-only fallback)
+
+Repos that have not migrated keep archived changes in `openspec/specs/<slug>/` and have
+no capability specs. When a skill reads archived changes, it looks in
+`openspec/changes/archive/` and, when that is missing or does not hold what it needs,
+falls back to `openspec/specs/<slug>/` — a folder holding `proposal.md` and **no**
+`spec.md` is a legacy archived change, not a capability. Only `/abet-archive` writes, and
+it always writes the new layout.
 
 ## Slugs and branches
 
@@ -44,8 +78,9 @@ Branches carry the slug so it can be inferred from `git branch --show-current`:
 **Slug inference**, used by every skill that needs the current change:
 
 1. `git branch --show-current`, strip the `<type>/` prefix and any leading `archive-`.
-2. If `openspec/changes/<slug>/` exists, that is the change.
-3. Otherwise, if `openspec/changes/` holds exactly one directory, use it.
+2. If `openspec/changes/<slug>/` exists (and `<slug>` is not `archive`), that is the change.
+3. Otherwise, if `openspec/changes/` holds exactly one directory **other than `archive/`**,
+   use it.
 4. Otherwise ask. Never guess between candidates.
 
 When Jira arrives, prefix slugs with the key (`ABC-123-bulk-edit-rubric-weights`) and
@@ -78,6 +113,13 @@ Headings alone are not enough. The completeness gate is literally
 `### Task N.N … ✅ DONE` headings reports zero open tasks whether or not any work was
 done, so the gate silently passes. Marking a task done means checking its box **and**
 appending `✅ DONE (YYYY-MM-DD)` to the heading, never one without the other.
+
+### tasks.md is a plan, not a work log
+
+It holds the tasks, their checkboxes, and a short retro where one is worth knowing.
+Debugging narratives, query output, stack traces and log dumps do not belong in it — they
+go in the PR, a commit, or nowhere. A `tasks.md` growing past **~50 KB** is a smell: say so
+and trim it, because the next design, the audit and the archive harvest all read it.
 
 ## Changes spanning backend and frontend
 
@@ -142,8 +184,9 @@ two PRs, the backend PR merges into `develop` **first** — but nothing requires
 (https://accreditation-stg.tcupc.pe), where runtime verification happens before promoting
 to `production` (https://accreditation.tcupc.pe); it is not a merge gate.
 
-Archiving is **one chore PR**: `git mv openspec/changes/<slug> openspec/specs/<slug>`
-moves the whole folder — both packages' sides — at once.
+Archiving is **one chore PR**: the capability specs the change affected are updated, and
+`git mv openspec/changes/<slug> openspec/changes/archive/<slug>` moves the whole folder —
+both packages' sides — at once.
 
 ## Documentation
 
@@ -163,9 +206,14 @@ stack-specific rules and map. Every skill reads the **root** docs plus the docs 
 | `frontend/docs/CONTEXT.md` | Frontend's descriptive map | `/abet-implement`, `/abet-audit-pr` flag staleness |
 | `frontend/docs/adr/` | Frontend-only decisions | `/abet-adr` only |
 | `AGENTS.md` (root, `backend/`, `frontend/`) | Pointer stub to that level's docs | Rarely |
+| `openspec/specs/<capability>/spec.md` | Current truth per capability — behaviour, rules and invariants, known edge cases | `/abet-archive` only, after merge, shown and approved first |
 
 `docs/POLICIES.md` at any level is read-only to every skill. If a change needs a policy
-altered, that is a conversation with the team, not an edit.
+altered, that is a conversation with the team, not an edit. The one exception is a
+proposal, never a silent edit: when `/abet-archive` harvests a merged change and finds a
+rule that applies to the whole repo (or a whole package), it drafts the exact line for
+`docs/POLICIES.md` or the package `AGENTS.md`, shows it with the spec diff, and writes it
+only if the user explicitly approves that line.
 
 ## Git
 
@@ -193,7 +241,8 @@ FEATURE
   /abet-address-review triage review comments → one new commit
       ↓                ←→ /abet-review-pr  (the reviewer's side, on someone else's PR)
       ↓
-  /abet-archive        git mv changes/ → specs/ via its own chore PR
+  /abet-archive        harvest into specs/<capability>/spec.md, then
+                       git mv changes/<slug> → changes/archive/<slug>, one chore PR
 
 BUG
   /abet-fix            reproduce → root cause → regression test → minimal fix
