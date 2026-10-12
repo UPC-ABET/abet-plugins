@@ -173,8 +173,8 @@ currency: if the diff changes a domain term, business rule or integration that
   **major** (the gate was skipped). A `legacy-kind-grew` entry is **minor**: "legacy kind
   grew; move the touched symbols to `<suggested kind>`" — never a blocker. `mixed-roles`
   and `utils-multiple-functions` are suggestions to split; `shared-lib-pure` is minor once
-  you confirm the file has no side effect. The suggested kind is read from export names, so
-  correct it when the body says otherwise.
+  you confirm the file has no side effect. The **suggested kind** is advisory, read from
+  export names: confirm or correct it by reading the code, and never block on it.
 
 **Runtime and tests** — the things invisible in a single file. N+1 queries, unbounded
 result sets, anything quadratic over data that grows with enrolment, concurrency and

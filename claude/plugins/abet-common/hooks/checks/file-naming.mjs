@@ -64,17 +64,36 @@ export const KIND_FOLDERS = {
 /** Kinds that may carry the secondary `interface` segment: `<name>.<kind>.interface.ts`. */
 const INTERFACE_KINDS = new Set(['repository', 'service']);
 
-/** The one home of each cross-module kind outside the modules. */
-export const LIBS_KINDS = ['calc', 'mapper', 'sql', 'builder', 'cache', 'http', 'crypto', 'client', 'service', 'module'];
-export const COMMONS_KINDS = ['transaction', 'errors', 'dtos', 'swagger']; // plus `base.<kind>.ts`
+/**
+ * The one home of each cross-module kind outside the modules. A lib's own `types`, `theme`
+ * and `messages` sit in its topic folder, next to the code they serve.
+ */
+const LIBS_CODE = ['calc', 'mapper', 'sql', 'builder', 'cache', 'http', 'crypto', 'client', 'service', 'module'];
+export const LIBS_KINDS = [...LIBS_CODE, 'types', 'theme', 'messages'];
+/**
+ * `src/commons/` folder → the kinds it holds; `.` is the commons root, which also holds the
+ * `base.<kind>.ts` framework base classes. App-wide config, the global exception filter and
+ * app-wide interceptors are framework pieces, so they live here too, one folder each —
+ * module-level config stays at the module root, the same split as module code vs libs/.
+ */
+export const COMMONS_FOLDERS = {
+  '.': ['transaction', 'errors', 'dtos', 'swagger', 'messages'],
+  configs: ['config'],
+  filters: ['filter'],
+  interceptors: ['interceptor'],
+};
 export const SHARED_KINDS = ['constants', 'types'];
 
-/** Where each kind goes when 2+ modules use it, for the messages. */
-const CROSS_MODULE_HOME = Object.fromEntries([
-  ...LIBS_KINDS.map((k) => [k, '`src/libs/<topic>/`']),
-  ...COMMONS_KINDS.map((k) => [k, '`src/commons/`']),
-  ...SHARED_KINDS.map((k) => [k, '`src/shared/`']),
-]);
+/** Kinds with no home inside a module: they live only in `src/commons/`. */
+const COMMONS_ONLY = new Set(['transaction', 'filter']);
+
+/** Where each kind goes when 2+ modules (or the whole app) use it, for the messages. */
+const CROSS_MODULE_HOME = {
+  ...Object.fromEntries(LIBS_CODE.map((k) => [k, '`src/libs/<topic>/`'])),
+  transaction: '`src/commons/`', errors: '`src/commons/`', dtos: '`src/commons/`', swagger: '`src/commons/`',
+  config: '`src/commons/configs/`', filter: '`src/commons/filters/`', interceptor: '`src/commons/interceptors/`',
+  constants: '`src/shared/`', types: '`src/shared/`',
+};
 
 const FUNCTIONS_TREE =
   'Name the file for what it is for: maps a shape → `core/<name>.mapper.ts`; computes a value → ' +
@@ -95,8 +114,9 @@ export const RETIRED_KINDS = {
   misc: `\`.misc.ts\` names no role. ${FUNCTIONS_TREE}`,
   transforms: '`.transforms.ts` is retired: a row/entity → DTO shape is a `core/<name>.mapper.ts`.',
   dto: 'The kind is plural: `model/<name>.dtos.ts`.',
-  configs: 'The kind is singular: `<name>.config.ts` at the module root.',
-  strings: 'i18n key constants are `config/strings/<module>.messages.ts`.',
+  configs: 'The kind is singular: `<name>.config.ts` — at the module root, or in `src/commons/configs/` for app-wide config.',
+  strings: 'i18n key constants are `<name>.messages.ts`: `config/strings/` in a module, the topic folder in ' +
+    '`libs/`, the `commons/` root for framework-wide keys.',
 };
 
 const LAYERS = new Set(['api', 'model', 'core', 'config', 'decorators', 'guards', 'interceptors', 'gateway', 'strategies']);
@@ -140,7 +160,7 @@ function kindProblem(file, { name, kind, secondary, suffix, extra }, allowed, pl
     return `\`${file}\`: only a repository or service contract takes the \`.interface\` segment ` +
       '(`<name>.repository.interface.ts`, `<name>.service.interface.ts`).';
   }
-  if (!(kind in KIND_FOLDERS) && kind !== 'transaction') {
+  if (!(kind in KIND_FOLDERS) && !COMMONS_ONLY.has(kind)) {
     return `\`.${kind}.ts\` is not a kind in the file-naming standard (\`${file}\`). ${list} ${FUNCTIONS_TREE}`;
   }
   return null;
@@ -165,6 +185,9 @@ function checkModule(rel) {
   if (kind === 'transaction') {
     return `\`${file}\`: \`.transaction.ts\` is the generic transaction runner and lives only in \`src/commons/\`. ` +
       'A module runs its writes through it from a repository.';
+  }
+  if (kind === 'filter') {
+    return `\`${file}\`: an exception filter is framework-wide and lives only in \`src/commons/filters/\`.`;
   }
   // a repository or service contract sits in core/, beside the repositories it describes
   const home = parsed.secondary ? 'core' : KIND_FOLDERS[kind];
@@ -194,28 +217,41 @@ function checkLibs(rel) {
     const other = CROSS_MODULE_HOME[parsed.kind];
     return `\`.${parsed.kind}.ts\` does not live in \`src/libs/\` (\`${file}\`). ` +
       (other ? `Its cross-module home is ${other}. ` : '') +
-      `libs/ holds cross-module ${LIBS_KINDS.join(', ')}. A kind only one module uses goes in that module's ` +
+      `libs/ holds cross-module ${LIBS_CODE.join(', ')}, plus a lib's own types, theme and messages. ` +
+      "A kind only one module uses goes in that module's " +
       `${KIND_FOLDERS[parsed.kind] ? where(KIND_FOLDERS[parsed.kind]) : 'folder'}.`;
   }
   return null;
 }
 
 function checkCommons(rel) {
-  const file = rel.split('/').pop();
+  const segments = rel.split('/');
+  const file = segments.pop();
+  const folder = segments.length === 0 ? '.' : segments.join('/');
+  const commonsPath = (f) => (f === '.' ? '`src/commons/`' : `\`src/commons/${f}/\``);
+  const place = commonsPath(folder);
   const parsed = parseName(file);
   if (parsed.name === 'ibase' && parsed.kind) {
     return `\`${file}\`: no \`I\` prefix in file names. The contract is \`base.${parsed.kind}.interface.ts\`.`;
   }
-  const problem = kindProblem(file, parsed, [...COMMONS_KINDS, 'base.<kind>'], '`src/commons/`');
-  // `base.controller.ts`, `base.repository.ts`, ...: the framework base classes
-  if (problem || parsed.name === 'base') return problem;
-  if (!COMMONS_KINDS.includes(parsed.kind)) {
-    const other = CROSS_MODULE_HOME[parsed.kind];
-    return `\`.${parsed.kind}.ts\` does not live in \`src/commons/\` (\`${file}\`). ` +
-      'commons/ holds the `base.*` classes, the transaction runner, and the shared errors, dtos and swagger. ' +
-      (other ? `Its cross-module home is ${other}.` : `Inside a module it lives in ${where(KIND_FOLDERS[parsed.kind])}.`);
+  const allowed = COMMONS_FOLDERS[folder];
+  if (!allowed) {
+    const folders = Object.keys(COMMONS_FOLDERS).filter((f) => f !== '.').map((f) => `\`${f}/\``).join(', ');
+    return `${place} is not a commons folder (\`${file}\`): commons/ holds its root plus ${folders}.`;
   }
-  return null;
+  const problem = kindProblem(file, parsed, folder === '.' ? [...allowed, 'base.<kind>'] : allowed, place);
+  // `base.controller.ts`, `base.repository.ts`, ...: the framework base classes, at the root
+  if (problem || (parsed.name === 'base' && folder === '.')) return problem;
+  if (allowed.includes(parsed.kind)) return null;
+  if (parsed.name === 'base') return `\`${file}\`: the framework base classes live at the \`src/commons/\` root.`;
+
+  const home = Object.entries(COMMONS_FOLDERS).find(([, kinds]) => kinds.includes(parsed.kind))?.[0];
+  if (home) return `\`.${parsed.kind}.ts\` belongs in ${commonsPath(home)}, not ${place} (\`${file}\`).`;
+  const other = CROSS_MODULE_HOME[parsed.kind];
+  return `\`.${parsed.kind}.ts\` does not live in \`src/commons/\` (\`${file}\`). ` +
+    'commons/ holds the `base.*` classes, the transaction runner, the shared errors, dtos, swagger and messages, ' +
+    'and the app-wide configs, filters and interceptors. ' +
+    (other ? `Its cross-module home is ${other}.` : `Inside a module it lives in ${where(KIND_FOLDERS[parsed.kind])}.`);
 }
 
 function checkShared(rel) {

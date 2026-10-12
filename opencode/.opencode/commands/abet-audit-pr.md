@@ -252,8 +252,9 @@ it; the script's `naming` reports what the gate lets through:
 | `shared-lib-pure` | minor | a new frontend `shared/lib/` file with no side effect: a pure function goes in `shared/utils/<functionName>.ts`. Confirm it is really pure first |
 | `utils-multiple-functions` | suggestion | a frontend `utils/` file exporting several functions: one function per file, named after it |
 
-The suggested kind comes from each export's name, which is a guess — correct it when the
-body says otherwise.
+The **suggested kind** is advisory: the script reads it from each export's name. Read the
+code before you report it, and confirm it or write the right kind. It never raises the
+severity and never blocks.
 
 ### Auditor E — security
 Run the native `/security-review` over the diff. On top of it: authentication and

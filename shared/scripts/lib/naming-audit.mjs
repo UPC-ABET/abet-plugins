@@ -59,7 +59,8 @@ export function auditNaming({ added, newFiles, readFile }) {
     if (!isNew && LEGACY_KIND.test(file) && addedExports.length > 0) {
       out.push({
         file, rule: 'legacy-kind-grew', severity: 'minor', names: addedExports,
-        why: `legacy kind grew; move the touched symbols to their kind: ${suggest(addedExports)}.`,
+        why: `legacy kind grew; move the touched symbols to their kind. Suggested kind, from the export names ` +
+          `(advisory — confirm or correct it by reading the code): ${suggest(addedExports)}.`,
       });
     }
     if (!isNew && LEGACY_MESSAGES.test(file) && lines.length > 0) {
@@ -79,7 +80,8 @@ export function auditNaming({ added, newFiles, readFile }) {
       if (roles.length > 1) {
         out.push({
           file, rule: 'mixed-roles', severity: 'suggestion', names,
-          why: `${text.split('\n').length} lines whose exports fall into ${roles.join(', ')}: split by role (${suggest(names)}).`,
+          why: `${text.split('\n').length} lines whose exports look like several roles (${roles.join(', ')}): split by role. ` +
+            `Suggested kind, from the export names (advisory — confirm or correct it by reading the code): ${suggest(names)}.`,
         });
       }
     }

@@ -698,12 +698,37 @@ check('naming: a loose file at the libs/ root is rejected', named('backend/src/l
 check('naming: a kind-less libs file is rejected', named('backend/src/libs/reporting/report-filename.ts'), 'bad');
 check('naming: .functions.ts in libs is rejected', named('backend/src/libs/reporting/report.functions.ts'), 'bad');
 check('naming: .utils.ts in libs is rejected', named('backend/src/libs/reporting/report.utils.ts'), 'bad');
-check('naming: types in libs point at shared/', nameMsg('backend/src/libs/reporting/report.types.ts').includes('src/shared/'), true);
+// a lib's own types, theme and messages sit next to the code they serve
+for (const f of ['report.types.ts', 'report.theme.ts', 'report-filename.messages.ts', 'report-render.messages.ts']) {
+  check(`naming: libs/reporting/${f} is accepted`, named(`backend/src/libs/reporting/${f}`), 'ok');
+}
+check('naming: libs/strings/*.strings.ts is rejected', named('backend/src/libs/strings/report-filename.strings.ts'), 'bad');
 check('naming: a repository in libs is rejected', named('backend/src/libs/reporting/report.repository.ts'), 'bad');
+check('naming: constants in libs point at shared/', nameMsg('backend/src/libs/reporting/report.constants.ts').includes('src/shared/'), true);
 for (const f of ['base.controller.ts', 'base.repository.ts', 'base.repository.interface.ts', 'run.transaction.ts',
-  'domain.errors.ts', 'pagination.dtos.ts', 'conflict.swagger.ts', 'base.decorator.spec.ts']) {
+  'domain.errors.ts', 'pagination.dtos.ts', 'conflict.swagger.ts', 'base.decorator.spec.ts',
+  'shared.messages.ts', 'swagger.messages.ts', 'configs/env.config.ts', 'configs/db.config.ts',
+  'configs/naming-strategy.config.ts', 'configs/validation.config.ts', 'configs/env.config.spec.ts',
+  'filters/all-exceptions.filter.ts', 'interceptors/camel-case.interceptor.ts', 'interceptors/camel-case.interceptor.spec.ts']) {
   check(`naming: commons/${f} is accepted`, named(`backend/src/commons/${f}`), 'ok');
 }
+check('naming: config at the commons root points at configs/', nameMsg('backend/src/commons/env.config.ts').includes('src/commons/configs/'), true);
+check('naming: commons/configs/db.configs.ts is rejected', named('backend/src/commons/configs/db.configs.ts'), 'bad');
+check('naming: an unsuffixed commons config is rejected', named('backend/src/commons/configs/naming-strategy.ts'), 'bad');
+check('naming: commons/swagger.strings.ts is rejected, pointing at messages',
+  nameMsg('backend/src/commons/swagger.strings.ts').includes('.messages.ts'), true);
+check('naming: a filter in interceptors/ is rejected', named('backend/src/commons/interceptors/x.filter.ts'), 'bad');
+check('naming: an unknown commons folder is rejected', named('backend/src/commons/misc/x.dtos.ts'), 'bad');
+check('naming: base classes live at the commons root', named('backend/src/commons/configs/base.controller.ts'), 'bad');
+check('naming: a filter inside a module points at commons/filters/',
+  nameMsg(`${M}/core/course-sections.filter.ts`).includes('src/commons/filters/'), true);
+check('naming: module-level config stays at the module root', named(`${M}/course-sections.config.ts`), 'ok');
+check('naming: a module keeps its own interceptors/', named(`${M}/interceptors/course-sections.interceptor.ts`), 'ok');
+for (const f of ['filters/all-exceptions.filter.ts', 'interceptors/camel-case.interceptor.ts', 'strings/shared.strings.ts']) {
+  check(`naming: shared/${f} is rejected`, named(`backend/src/shared/${f}`), 'bad');
+}
+check('naming: a shared filter points at commons/filters/',
+  nameMsg('backend/src/shared/filters/all-exceptions.filter.ts').includes('src/commons/filters/'), true);
 check('naming: a kind-less commons file is rejected', named('backend/src/commons/domain-error.ts'), 'bad');
 check('naming: an I-prefixed commons contract is rejected', nameMsg('backend/src/commons/ibase.repository.ts').includes('base.repository.interface.ts'), true);
 check('naming: a calc in commons is rejected, pointing at libs', nameMsg('backend/src/commons/x.calc.ts').includes('src/libs/'), true);
@@ -891,6 +916,9 @@ console.log('naming audit');
   check('naming audit: a grown .functions.ts is a minor finding', legacy.filter((f) => f.rule === 'legacy-kind-grew').length, 2);
   check('naming audit: it suggests a kind per symbol',
     /toSectionDto → `mapper`/.test(legacy[0].why) && /sumWeights → `calc`/.test(legacy[0].why), true);
+  check('naming audit: the kind is worded as an advisory suggested kind',
+    /Suggested kind/.test(legacy[0].why) && /advisory/.test(legacy[0].why), true);
+  check('naming audit: a name-based finding never blocks', legacy.every((f) => f.severity !== 'blocker'), true);
   check('naming audit: an edited config/strings validation file points at messages', legacy[1].why.includes('.messages.ts'), true);
   check('naming audit: a new .functions.ts is the gate\'s job, not a growth finding', auditNaming({
     added: new Map([[`${M}/core/x.functions.ts`, [{ n: 1, text: 'export const a = 1;' }]]]), newFiles: new Set([`${M}/core/x.functions.ts`]), readFile: () => 'x\n',

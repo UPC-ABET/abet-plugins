@@ -37,7 +37,8 @@ Run from the repo root with the path-filter form; from inside `backend/`, drop t
 
 ```
 backend/src/
-├── commons/     framework base classes (base.*), the transaction runner, shared errors/dtos/swagger
+├── commons/     framework base classes (base.*), the transaction runner, shared errors/dtos/swagger/messages,
+│                configs/, filters/, interceptors/
 ├── database/    typeorm.config.ts, migrations/, scripts/seeds/
 ├── libs/        cross-module helpers with no module ownership, one topic folder each
 ├── modules/     academic, accreditation, admin, auth, core, evaluation,
@@ -115,13 +116,18 @@ For example, the course-section band calculation is `core/course-sections.calc.t
 ### Outside the modules: commons, libs, shared
 
 These are not layers. Each is the **one** home of a fixed set of kinds that serve two or
-more modules. A kind only one module uses never goes here: it goes in that module's folder
-above.
+more modules, or the whole app. A kind only one module uses never goes here: it goes in
+that module's folder above. Module-level config, for example, stays at the module root,
+and only app-wide config lives in `commons/configs/` — the same split as module code vs
+`libs/`.
 
 | Folder | The only home of |
 | --- | --- |
-| `commons/` | framework base classes (`base.controller.ts`, `base.repository.ts`, ...), the generic transaction runner (`<name>.transaction.ts`), the shared `errors` (domain error, internal error), shared `dtos`, shared `swagger` |
-| `libs/<topic>/` | cross-module `calc`, `mapper`, `sql`, `builder`, `cache`, `http`, `crypto`, `client`, plus `service`/`module` for an injectable lib (`encrypt`). Every file in a topic folder (`libs/reporting/`, `libs/excel/`, `libs/chart/`) — no new loose files at the `libs/` root |
+| `commons/` (root) | framework base classes (`base.controller.ts`, `base.repository.ts`, ...), the generic transaction runner (`<name>.transaction.ts`), the shared `errors` (domain error, internal error), shared `dtos`, shared `swagger`, framework-wide i18n keys (`<name>.messages.ts`) |
+| `commons/configs/` | app-wide `config` (`env.config.ts`, `db.config.ts`, `naming-strategy.config.ts`) |
+| `commons/filters/` | `filter` — the global exception filter. This kind has no home inside a module |
+| `commons/interceptors/` | app-wide `interceptor`s (a module's own interceptor stays in its `interceptors/`) |
+| `libs/<topic>/` | cross-module `calc`, `mapper`, `sql`, `builder`, `cache`, `http`, `crypto`, `client`, plus `service`/`module` for an injectable lib (`encrypt`), plus the lib's own `types`, `theme` and `messages` next to the code they serve. Every file in a topic folder (`libs/reporting/`, `libs/excel/`, `libs/chart/`) — no new loose files at the `libs/` root, and no `libs/strings/` |
 | `shared/` | cross-module `constants` and `types` only |
 
 `database/`, `tools/`, `main.ts` and `app.*` are outside the standard.
@@ -134,7 +140,7 @@ above.
 | `.utils.ts`, `.util.ts`, `.helpers.ts`, `.helper.ts`, `.common.ts`, `.misc.ts` | the same decision tree |
 | `.transforms.ts` | `mapper` |
 | `.dto.ts`, `.configs.ts` | `dtos`, `config` (the legacy `error` kind is still accepted; new files use `errors`) |
-| `config/strings/*.validation.ts`, `.strings.ts` | `config/strings/<module>.messages.ts` — `.validation.ts` means only business-rule validation in `core/` |
+| `config/strings/*.validation.ts`, `.strings.ts` | `<name>.messages.ts` — in `config/strings/` for a module, the topic folder for a lib, the `commons/` root for framework-wide keys. `.validation.ts` means only business-rule validation in `core/` |
 | I-prefixed interface files (`ibase.repository.ts`) | `<name>.<kind>.interface.ts` |
 | `index.ts` barrels, and files whose only statements are `export ... from` | import from the file that declares the symbol |
 | a file with no kind segment (`report-filename.ts`) | `<name>.<kind>.ts` |
